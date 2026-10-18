@@ -95,6 +95,10 @@ python scripts/vault.py --data-root <root> encrypt    # 产出 vault/raw/<name>-
 
 # 6. 离线恢复备份（一次性把恢复关键件拷到用户指定目录）
 python scripts/offline_backup.py --data-root <root> --dest <备份目录> --verify
+
+# 7. 校验「备份 + 镜像」可逆（不写盘；给了 --source 会与源逐字节比对）
+python scripts/recover.py --data-root <root> --verify --source <源目录>
+#   真正重建：python scripts/recover.py --data-root <root> --apply
 ```
 
 ## 误报治理
@@ -118,7 +122,16 @@ python scripts/offline_backup.py --data-root <root> --dest <备份目录> --veri
 - `--verify`：逐文件比对 sha256；`--prune-old`：旧备份软移 `superseded/`
 - 产出 `<dest>/knowledge-desensitization-backup-<ts>/`，含 `MANIFEST.json` 与 `RESTORE.md`
 
+**恢复靠 `map.json`，不靠 Bitwarden**：`recover.py` 用 `备份 + 脱敏镜像` 重建原文，
+同时处理 `[REDACTED:...]`（token 形态）与「见保险库：xxx」（引用形态）：
+
+```bash
+python scripts/recover.py --data-root <root> --verify [--source <源>]   # 只校验
+python scripts/recover.py --data-root <root> --apply                    # → recovered/<name>/
+```
+
 > **私钥/salt/map 丢失 = 镜像里的 `[REDACTED]` 永不可逆。** 请把 `--dest` 指向 U 盘或加密网盘。
+> 分层保存与恢复流程见 `references/recovery.md`（密文与密钥分道；镜像可上云，钥匙必须离线）。
 
 ## 安全红线（务必遵守）
 

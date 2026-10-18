@@ -101,6 +101,19 @@ python scripts/offline_backup.py --data-root <root> --dest <目录> \
 - 产出 `<dest>/knowledge-desensitization-backup-<ts>/` + `MANIFEST.json` + `RESTORE.md`
 - `--verify` 逐文件 sha256；`--prune-old` 旧备份软移
 
+## recover.py —— 用「备份 + 镜像」重建原文
+
+```bash
+python scripts/recover.py --data-root <root> --verify [--source <源>]   # 只校验
+python scripts/recover.py --data-root <root> --apply                    # → recovered/<name>/
+python scripts/recover.py --data-root <root> --apply --in-place         # 就地还原镜像（谨慎）
+```
+
+- 同时处理 `[REDACTED:...]`（token 形态，用 `map.json`）与「见保险库：xxx」（引用形态，用 `bw-items.json` + `map.json`）
+- `--verify` 只读；给了 `--source` 会与源逐字节比对（期望「不一致 0」）
+- 默认写到独立目录，不覆盖镜像；`--in-place` 才改镜像
+- **恢复不依赖 Bitwarden**：`map.json` 是原文真相源
+
 ## restore.py —— 按 token 填回原文
 
 ```bash

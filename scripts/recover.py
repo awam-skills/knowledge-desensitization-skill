@@ -1,0 +1,241 @@
+# AI生成
+"""recover.py — 用「离线备份 + 脱敏镜像」重建原始内容（把占位符还原成原文）。
+
+背景（用户 2026-10-18 需求）
+- 要求：**备份的内容 + sanitized 镜像，必须能够恢复出原始知识库。**
+- 脱敏镜像里的凭据可能是两种形态：
+    1) token 形态   [REDACTED:<label>:<hmac8>]   —— sanitize 刚产出的样子
+    2) 引用形态     见保险库：<条目名>            —— backfill 之后的样子
+- 两者都能还原：
+    token  → 原文    取自 vault/map/map.json
+    引用名 → token   取自 vault/map/bw-items.json（再经 map.json 取原文）
+
+为什么不需要 Bitwarden 也能恢复
+- 真正的「原文真相源」是 vault/map/map.json（token → 原值），它就在离线备份的必须件里。
+- Bitwarden 只是「方便取用的副本」；bw-items.json 只存 token ↔ 条目名，不含原值。
+- 因此：**map.json（+ bw-items.json 用于引用形态）就是全部恢复所需**，与 Bitwarden 是否可用无关。
+
+安全
+- 原文来自 vault/map/map.json（SECRET），本脚本**绝不打印任何原文**
+  （只输出计数、文件路径与校验结果）。
+- 默认 --verify（只读、dry-run）；--apply 才写盘。
+- 默认重建到独立目录 <data-root>/recovered/<name>/，**不覆盖镜像**
+  （镜像是「对外分享物」，不应被就地解密）。确需就地还原时才用 --in-place。
+
+目录无关
+- --data-root 定位 vault/ 与 workspace.json；--mirror 缺省读 workspace.json 的 mirror。
+
+用法
+    # 1) 校验「备份 + 镜像」能否完整还原（不写盘；给了 --source 还会逐字节比对源）
+    python scripts/recover.py --data-root <根> --verify
+    python scripts/recover.py --data-root <根> --verify --source <源目录>
+
+    # 2) 重建到独立目录
+    python scripts/recover.py --data-root <根> --apply
+
+    # 3) 就地还原镜像（谨慎：还原后镜像即含明文，勿再分享）
+    python scripts/recover.py --data-root <根> --apply --in-place
+"""
+from __future__ import annotations
+
+import argparse
+import collections
+import json
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sanitize_lib import TOKEN_RX, iter_files, read_text  # noqa: E402
+import paths  # noqa: E402
+
+
+def load_tokens(root: str) -> dict:
+    p = os.path.join(paths.map_dir(root), "map.json")
+    if not os.path.exists(p):
+        print("找不到映射表：", p, "\n（恢复必须件之一；请从离线备份里取回 map.json）",
+              file=sys.stderr)
+        raise SystemExit(2)
+    with open(p, encoding="utf-8") as fh:
+        return json.load(fh).get("tokens", {})
+
+
+def load_name_to_token(root: str) -> dict[str, str]:
+    """从 bw-items.json 建 引用名 → token。缺文件时返回空（只影响引用形态）。"""
+    p = os.path.join(paths.map_dir(root), "bw-items.json")
+    if not os.path.exists(p):
+        return {}
+    try:
+        with open(p, encoding="utf-8") as fh:
+            blob = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    items = blob.get("items", []) if isinstance(blob, dict) else blob
+    out: dict[str, str] = {}
+    for it in items:
+        tok = None
+        for f in (it.get("fields") or []):
+            if f.get("name") == paths.TOKEN_FIELD:
+                tok = f.get("value")
+                break
+        if not tok:
+            continue
+        name = it.get("name") or ""
+        if name.startswith(paths.ITEM_PREFIX + "/"):
+            name = name[len(paths.ITEM_PREFIX) + 1:]
+        if name:
+            out[name] = tok
+    return out
+
+
+def reconstruct(text: str, tokens: dict, name2tok: dict[str, str],
+                stats: collections.Counter) -> str:
+    """把引用形态与 token 形态都还原成原文。只统计计数，不打印原文。"""
+    # 1) 引用形态：见保险库：<name>  —— 长名优先，避免前缀互相吞并
+    if name2tok:
+        names = sorted(name2tok, key=len, reverse=True)
+        pat = re.compile("|".join(re.escape(paths.VAULT_REF + n) for n in names))
+
+        def sub_ref(m: re.Match) -> str:
+            name = m.group(0)[len(paths.VAULT_REF):]
+            rec = tokens.get(name2tok.get(name, ""))
+            v = rec.get("value") if rec else None
+            if v is None:
+                stats["ref_unresolved"] += 1
+                return m.group(0)
+            stats["ref_replaced"] += 1
+            return v
+
+        text = pat.sub(sub_ref, text)
+
+    # 2) token 形态： [REDACTED:...]
+    def sub_tok(m: re.Match) -> str:
+        rec = tokens.get(m.group(0))
+        v = rec.get("value") if rec else None
+        if v is None:
+            stats["token_unresolved"] += 1
+            return m.group(0)
+        stats["token_replaced"] += 1
+        return v
+
+    text = TOKEN_RX.sub(sub_tok, text)
+    # 未被解析的引用（名字不在 bw-items 里）残留计数
+    stats["ref_leftover"] += text.count(paths.VAULT_REF)
+    return text
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    paths.add_root_arg(ap)
+    ap.add_argument("--mirror", help="脱敏镜像根；缺省读 workspace.json 的 mirror")
+    ap.add_argument("--source", help="只读源目录；用于逐字节校验（缺省读 workspace.json）")
+    ap.add_argument("--out", help="重建输出目录；缺省 <data-root>/recovered/<name>")
+    g = ap.add_mutually_exclusive_group()
+    g.add_argument("--verify", action="store_true", help="只校验、不写盘（默认行为）")
+    g.add_argument("--apply", action="store_true", help="写盘")
+    ap.add_argument("--in-place", action="store_true",
+                    help="就地写回镜像（谨慎：还原后镜像即含明文，勿再分享）")
+    args = ap.parse_args()
+
+    root = paths.resolve_data_root(args.data_root)
+    mirror = args.mirror or paths.default_mirror(root)
+    if not mirror or not os.path.isdir(mirror):
+        print("缺镜像目录：给 --mirror，或在 <data-root>/workspace.json 配置 mirror",
+              file=sys.stderr)
+        return 2
+    source = args.source or paths.default_source(root)
+    ws_name = paths.load_workspace(root).get("name") or "notes"
+    outdir = args.out or os.path.join(root, "recovered", ws_name)
+
+    tokens = load_tokens(root)
+    name2tok = load_name_to_token(root)
+
+    stats: collections.Counter = collections.Counter()
+    rows: list[tuple[str, str, str]] = []   # (rel, new_text, original_text)
+    for p in iter_files(mirror):
+        text = read_text(p)
+        if text is None:
+            continue
+        if "REDACTED" not in text and paths.VAULT_REF not in text:
+            continue
+        new = reconstruct(text, tokens, name2tok, stats)
+        rel = os.path.relpath(p, mirror)
+        rows.append((rel, new, text))
+        if new != text:
+            stats["files_changed"] += 1
+
+    # 与源逐字节比对（若源可得）
+    if source and os.path.isdir(source):
+        for rel, new, _old in rows:
+            sp = os.path.join(source, rel)
+            src = read_text(sp)
+            if src is None:
+                stats["verify_no_source"] += 1
+            elif src == new:
+                stats["verify_match"] += 1
+            else:
+                stats["verify_mismatch"] += 1
+                print("  ✗ 不一致：", rel, file=sys.stderr)
+
+    print("镜像目录：", mirror)
+    print("映射表　：", os.path.join(paths.map_dir(root), "map.json"))
+    print("引用映射：", os.path.join(paths.map_dir(root), "bw-items.json"),
+          f"（{len(name2tok)} 条）" if name2tok else "（缺失，仅能还原 token 形态）")
+    print()
+    print(f"token 形态还原 : {stats['token_replaced']} 处"
+          f"（未解析 {stats['token_unresolved']}）")
+    print(f"引用形态还原   : {stats['ref_replaced']} 处"
+          f"（未解析 {stats['ref_unresolved']}，残留 {stats['ref_leftover']}）")
+    print(f"涉及文件       : {stats['files_changed']}")
+    if source and os.path.isdir(source):
+        print(f"源比对         : 一致 {stats['verify_match']} / "
+              f"不一致 {stats['verify_mismatch']} / 源缺失 {stats['verify_no_source']}")
+
+    unresolved = (stats["token_unresolved"] + stats["ref_unresolved"]
+                  + stats["ref_leftover"])
+    if unresolved:
+        print("\n⚠️  存在未解析占位符：请确认 map.json / bw-items.json 是否来自同一份备份，"
+              "或该处是否为 PII（PII 也应在 map.json 里，应能还原）。")
+
+    if not args.apply:
+        print("\n[校验模式] 未写盘。加 --apply 才重建。")
+        return 0 if not unresolved else 1
+
+    # 写盘
+    for rel, new, old in rows:
+        if args.in_place:
+            dst = os.path.join(mirror, rel)
+            content = new
+        else:
+            dst = os.path.join(outdir, rel)
+            content = new
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        with open(dst, "w", encoding="utf-8", newline="") as fh:
+            fh.write(content)
+
+    # 未命中占位符的其它文本文件（无命中）也一并拷到独立目录，形成完整树
+    if not args.in_place:
+        copied = 0
+        changed_rels = {r for r, _, _ in rows}
+        for p in iter_files(mirror):
+            rel = os.path.relpath(p, mirror)
+            if rel in changed_rels:
+                continue
+            text = read_text(p)
+            if text is None:
+                continue
+            dst = os.path.join(outdir, rel)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            with open(dst, "w", encoding="utf-8", newline="") as fh:
+                fh.write(text)
+            copied += 1
+        print(f"\n另复制未含占位符的文件 {copied} 个")
+
+    print("已重建 →", mirror if args.in_place else outdir)
+    if args.in_place:
+        print("⚠️  已就地还原镜像：该目录现在含明文，请勿再分享/入库。")
+    return 0 if not unresolved else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

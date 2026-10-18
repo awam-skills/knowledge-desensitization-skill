@@ -143,12 +143,23 @@ def main() -> int:
 **这三件套丢失 = 脱敏镜像不可逆。** 请务必离线保存（U 盘 / 加密网盘），
 并与镜像分开存放。
 
-## 恢复步骤
+## 恢复步骤（备份 + 脱敏镜像 → 原始知识库）
+
+前提：你还有脱敏镜像 `sanitized/<name>/`（可放网盘/私有 Git）。
 
 1. 在新机器的数据根创建 `vault/` 结构，把本备份的 `vault/` 与 `config/` 覆盖回去。
-2. 用 age 私钥解密原始归档（若含 `vault/raw/*.zip.age`）：
+2. 把脱敏镜像放回 `<新根>/sanitized/<name>/`。
+3. **校验可逆性**：`python scripts/recover.py --data-root <新根> --verify`
+   （若源目录还在，加 `--source <源>` 会逐字节比对，期望「不一致 0」）
+4. **重建**：`python scripts/recover.py --data-root <新根> --apply`
+   → 产出 `<新根>/recovered/<name>/`（`--in-place` 则就地还原镜像，之后即含明文，勿再分享）
+5. 若备份含 `vault/raw/*.zip.age`，可交叉验证：
    `age -d -i vault/keys/age-key.txt vault/raw/<file>.zip.age > notes.zip`
-3. 校验完整性：对照本目录 `MANIFEST.json` 的 sha256。
+6. 对照本目录 `MANIFEST.json` 的 sha256 核对完整性。
+
+> 说明：`bw-items.json` 不含原文，只为把「见保险库：xxx」这种**引用形态**还原回 token；
+> 若镜像里的凭据仍是 `[REDACTED:...]` **token 形态**，只靠 `map.json` 即可还原。
+> **Bitwarden 是否可用，不影响恢复。**
 
 ## 安全
 

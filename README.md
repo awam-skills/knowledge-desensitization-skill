@@ -113,8 +113,13 @@ chmod +x .git/hooks/pre-commit
 `$env:BW_SESSION = (bw unlock --raw)`，确认 `bw status` 为 `unlocked`，再跑导入脚本（脚本会复用会话）。
 
 **Q：镜像里的 `[REDACTED:...]` 还能还原吗？**
-能，只要 `vault/map/map.json` + `vault/map/salt.bin` 在。用 `scripts/restore.py` 按 token 填回。
+能，只要 `vault/map/map.json` + `vault/map/salt.bin` 在。用 `scripts/recover.py` 用「备份 + 镜像」整体重建，
+或用 `scripts/restore.py` 按单个 token 填回。
 **这三件套 + age 私钥丢了就永远还原不了** —— 所以务必 `offline_backup.py` 做离线备份。
+
+**Q：需要 Bitwarden 才能恢复吗？**
+不需要。原文真相源是 `map.json`（含 token→原值）；Bitwarden 只是方便取用的副本，`bw-items.json` 不含原值。
+分层保存（哪些能上云、哪些必须离线）见 `references/recovery.md`。
 
 **Q：误报太多怎么办？**
 `whitelist.py add`（永久跳过）或 `restore.py`（填回原文）；组合口令用 `add_pair_literal.py`。
