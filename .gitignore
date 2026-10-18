@@ -54,5 +54,44 @@ mapping*.json
 mapping*.csv
 residual*.json
 
+# ---------------------------------------------------------------
+# 数据工作区（data-root）隐私护栏：下面这些是「运行数据」，不是技能内容。
+# 一旦某天把技能仓和数据放在同一目录（或误把 data-root 建在技能仓内），
+# 也必须保证下列路径永远进不了 Git。技能包发布前请逐个复核。
+# ---------------------------------------------------------------
+
+# 工作区标记与目录配置（含真实源/镜像绝对路径）
+.desensitization-root
+workspace.json
+
+# 运行数据根（若与技能仓同处一棵树）
+/vault/
+/sanitized/
+/reports/
+/storage/
+
+# 保险库：私钥 / salt / 映射表 / 原始加密档 / 上下文预览（全部含敏感信息）
+vault/
+*.age
+
+# 明文凭据清单（L0 字面量）：绝不入库
+config/literals.json
+config/literals.json.bak-*
+literals.json
+literals.json.bak-*
+
+# Bitwarden 导入/回填中间产物（含原文）
+bw-import-*.json
+bw-items.json
+bw-promoted-*.json
+
+# 脱敏镜像与报告（按常见命名兜底）
+sanitized/
+reports/
+
+# 本地临时测试工作区
+.kdtest-*/
+.kdtest*/
+
 # Agent 工作区记忆（本机工作笔记，不是技能内容）
 .workbuddy/
