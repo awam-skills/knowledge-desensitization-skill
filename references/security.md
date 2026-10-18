@@ -77,6 +77,7 @@ chmod +x .git/hooks/pre-commit
 - `meta/`：配置 `rules/whitelist/exclude`；`--with-reports` 时的 reports —— 非密，**不上云**
 - **默认固定目录 + 增量更新**：`--dest` 即备份根（`cloud/ offline/ meta/ superseded/ MANIFEST.json RESTORE.md`），重复执行只写新增/变化，源里删掉的旧文件软移 `superseded/<ts>/`
 - `--verify` 逐文件 sha256 校验；`--dated` 改回日期快照模式（此时 `--prune-old` 才生效）
+- `--tiers cloud,offline,meta` 可只备份指定层（如只把 C+D 单独备到离线介质）
 
 > 三件套（`age-key.txt`/`salt.bin`/`map.json`）丢失 = 镜像里的 `[REDACTED]` 永不可逆；
 > `offline/` 请指向 U 盘/密码管理器/保险柜，**禁止网盘与 Git**。

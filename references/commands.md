@@ -94,7 +94,8 @@ python scripts/vault_prune.py --data-root <root> [--apply]
 
 ```bash
 python scripts/offline_backup.py --data-root <root> --dest <目录> [--verify] \
-    [--with-literals] [--with-reports] [--bitwarden-export <文件>] [--dated] [--prune-old]
+    [--with-literals] [--with-reports] [--bitwarden-export <文件>] \
+    [--tiers cloud,offline,meta] [--dated] [--prune-old]
 ```
 
 按敏感度**拆成三个子目录**，直接对应网盘/离线两条去路：
@@ -107,6 +108,7 @@ python scripts/offline_backup.py --data-root <root> --dest <目录> [--verify] \
 
 - **默认「固定目录 + 增量更新」**：`<dest>/` 即备份根，直接放 `cloud/ offline/ meta/ superseded/ MANIFEST.json RESTORE.md`；重复执行只写「新增/变化」的文件、未变跳过，源里删掉的旧文件**软移** `superseded/<ts>/`
 - `--dated`：改回旧的日期快照 `<dest>/knowledge-desensitization-backup-<ts>/`（`MANIFEST.json`/`RESTORE.md` 放该目录根）；`--prune-old` 仅在此模式把旧日期目录软移 `superseded/`
+- `--tiers cloud,offline,meta`：只备份指定层（如 `--tiers offline --with-literals` 只备 C+D 到某介质）
 - `--with-reports` 默认关：报告含「敏感文件名索引」，不上云，仅落 `meta/reports/`
 - `--with-literals` 默认关：literals 含明文，落 `offline/`，介质须安全
 - `--verify` 逐文件 sha256 校验

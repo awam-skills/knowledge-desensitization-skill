@@ -41,7 +41,12 @@ Bitwarden 本体（D 级，不是文件、不在本目录）
 
 用法
     python scripts/offline_backup.py --data-root <根> --dest <目标目录> [--verify] \
-        [--with-literals] [--with-reports] [--bitwarden-export <文件>] [--dated] [--prune-old]
+        [--with-literals] [--with-reports] [--bitwarden-export <文件>] \
+        [--tiers cloud,offline,meta] [--dated] [--prune-old]
+
+    只把 C+D（离线层）备到某介质：
+        python scripts/offline_backup.py --data-root <根> --dest <介质> \
+            --tiers offline --with-literals --verify
 """
 from __future__ import annotations
 
@@ -152,7 +157,16 @@ def main() -> int:
                     help="（旧行为）在 --dest 下新建 <时间戳> 子目录，而非原地增量更新")
     ap.add_argument("--prune-old", action="store_true",
                     help="仅 --dated 模式：把目标下旧日期备份软移 superseded/，只留最新")
+    ap.add_argument("--tiers", default="cloud,offline,meta",
+                    help="只备份指定层（逗号分隔，可选 cloud/offline/meta 组合）；默认全部")
     args = ap.parse_args()
+
+    tiers = {t.strip() for t in args.tiers.split(",") if t.strip()}
+    unknown = tiers - {"cloud", "offline", "meta"}
+    if unknown:
+        print(f"--tiers 含未知层：{','.join(sorted(unknown))}（可选 cloud/offline/meta）",
+              file=sys.stderr)
+        return 2
 
     root = paths.resolve_data_root(args.data_root)
     dest_base = os.path.abspath(args.dest)
@@ -178,29 +192,32 @@ def main() -> int:
     # ---- 先汇总「本次应存在的文件」清单 ----
     items: list[tuple[str, str, str]] = []  # (tier, rel_in_backup, src_abs)
 
-    if mirror and os.path.isdir(mirror):
-        for dp, _dn, fns in os.walk(mirror):
-            for fn in fns:
-                src = os.path.join(dp, fn)
-                rel = os.path.join("cloud", name, os.path.relpath(src, mirror))
-                items.append(("cloud", rel, src))
-    else:
-        print("  ⚠️  未找到脱敏镜像（cloud/ 将不含 A 层；恢复需要它）", file=sys.stderr)
-    for a in archive_paths(root):
-        items.append(("cloud", os.path.join("cloud", "archive", os.path.basename(a)), a))
-
-    for rel in offline_rels(root, args.with_literals):
-        items.append(("offline", os.path.join("offline", rel), os.path.join(root, rel)))
-    if args.bitwarden_export:
-        src = os.path.abspath(args.bitwarden_export)
-        if os.path.isfile(src):
-            items.append(("offline", os.path.join("offline", "bitwarden",
-                                                  os.path.basename(src)), src))
+    if "cloud" in tiers:
+        if mirror and os.path.isdir(mirror):
+            for dp, _dn, fns in os.walk(mirror):
+                for fn in fns:
+                    src = os.path.join(dp, fn)
+                    rel = os.path.join("cloud", name, os.path.relpath(src, mirror))
+                    items.append(("cloud", rel, src))
         else:
-            print(f"  ⚠️  --bitwarden-export 文件不存在：{src}", file=sys.stderr)
+            print("  ⚠️  未找到脱敏镜像（cloud/ 将不含 A 层；恢复需要它）", file=sys.stderr)
+        for a in archive_paths(root):
+            items.append(("cloud", os.path.join("cloud", "archive", os.path.basename(a)), a))
 
-    for rel in meta_rels(root, args.with_reports):
-        items.append(("meta", os.path.join("meta", rel), os.path.join(root, rel)))
+    if "offline" in tiers:
+        for rel in offline_rels(root, args.with_literals):
+            items.append(("offline", os.path.join("offline", rel), os.path.join(root, rel)))
+        if args.bitwarden_export:
+            src = os.path.abspath(args.bitwarden_export)
+            if os.path.isfile(src):
+                items.append(("offline", os.path.join("offline", "bitwarden",
+                                                      os.path.basename(src)), src))
+            else:
+                print(f"  ⚠️  --bitwarden-export 文件不存在：{src}", file=sys.stderr)
+
+    if "meta" in tiers:
+        for rel in meta_rels(root, args.with_reports):
+            items.append(("meta", os.path.join("meta", rel), os.path.join(root, rel)))
 
     if not items:
         print("没有可备份的文件（vault/ 是否已初始化？）", file=sys.stderr)
@@ -214,6 +231,7 @@ def main() -> int:
 
     manifest = {"created": dt.datetime.now().isoformat(timespec="seconds"),
                 "mode": "incremental" if incremental else "dated",
+                "tiers": sorted(tiers),
                 "data_root": root, "dest": outdir, "name": name, "files": []}
     total = 0
     stats = {"new": 0, "updated": 0, "unchanged": 0}
@@ -237,10 +255,14 @@ def main() -> int:
         flag = "" if not args.verify else (" ✓" if ok else " ✗")
         print(f"  [{tier}] {tag} {rel_in_backup}  ({size} B){flag}")
 
-    print(f"cloud/  ← A 脱敏镜像 + B 加密快照（可直接上传）"
-          f"{'　[增量]' if incremental else ''}")
-    print("offline/  ← C 密钥材料 + D Bitwarden 映射（手动拷到离线介质）")
-    print("meta/  ← 配置/审计（不上云）")
+    _hdr = {'cloud': "cloud/  ← A 脱敏镜像 + B 加密快照（可直接上传）",
+            'offline': "offline/  ← C 密钥材料 + D Bitwarden 映射（手动拷到离线介质）",
+            'meta': "meta/  ← 配置/审计（不上云）"}
+    for _t in ("cloud", "offline", "meta"):
+        if _t in tiers:
+            print(_hdr[_t])
+    if incremental:
+        print("（增量模式：内容未变的文件将跳过）")
     for tier, rel, src_abs in items:
         # 增量模式下，若旧清单记录同哈希且目标存在，直接跳过哈希重算
         dst = os.path.join(outdir, rel)
@@ -357,9 +379,12 @@ bw export --format encrypted_json --password "<导出口令>" --output bw-export
     print(f"\n已处理 {len(manifest['files'])} 个文件，合计 {total} 字节"
           f"（新增 {stats.get('new',0)} / 更新 {stats.get('updated',0)} / 未变 {stats.get('unchanged',0)}）")
     print("备份根：", outdir)
-    print("  ├─ cloud/    （可直接上传网盘）")
-    print("  ├─ offline/  （手动拷到离线介质）")
-    print("  ├─ meta/     （配置/审计，不上云）")
+    if "cloud" in tiers:
+        print("  ├─ cloud/    （可直接上传网盘）")
+    if "offline" in tiers:
+        print("  ├─ offline/  （手动拷到离线介质）")
+    if "meta" in tiers:
+        print("  ├─ meta/     （配置/审计，不上云）")
     print("  ├─ superseded/（软移的旧文件）" if incremental else "  ├─ (日期快照)")
     print("  ├─ MANIFEST.json")
     print("  └─ RESTORE.md")
