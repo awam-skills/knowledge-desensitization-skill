@@ -94,7 +94,7 @@ python scripts/vault_prune.py --data-root <root> [--apply]
 
 ```bash
 python scripts/offline_backup.py --data-root <root> --dest <目录> [--verify] \
-    [--with-literals] [--with-reports] [--bitwarden-export <文件>] [--prune-old]
+    [--with-literals] [--with-reports] [--bitwarden-export <文件>] [--dated] [--prune-old]
 ```
 
 按敏感度**拆成三个子目录**，直接对应网盘/离线两条去路：
@@ -105,10 +105,11 @@ python scripts/offline_backup.py --data-root <root> --dest <目录> [--verify] \
 | `offline/` | C+D | `vault/keys`、`vault/map/{salt,map,bw-items}`、（`--with-literals`）`config/literals.json`、（`--bitwarden-export`）`bitwarden/` | **手动拷到离线介质** |
 | `meta/` | — | 配置 `rules/whitelist/exclude`；（`--with-reports`）reports | 非密，**不上云** |
 
-- 产出 `<dest>/knowledge-desensitization-backup-<ts>/`，根放 `MANIFEST.json` + `RESTORE.md`（**保证 `cloud/` 干净**）
+- **默认「固定目录 + 增量更新」**：`<dest>/` 即备份根，直接放 `cloud/ offline/ meta/ superseded/ MANIFEST.json RESTORE.md`；重复执行只写「新增/变化」的文件、未变跳过，源里删掉的旧文件**软移** `superseded/<ts>/`
+- `--dated`：改回旧的日期快照 `<dest>/knowledge-desensitization-backup-<ts>/`（`MANIFEST.json`/`RESTORE.md` 放该目录根）；`--prune-old` 仅在此模式把旧日期目录软移 `superseded/`
 - `--with-reports` 默认关：报告含「敏感文件名索引」，不上云，仅落 `meta/reports/`
 - `--with-literals` 默认关：literals 含明文，落 `offline/`，介质须安全
-- `--verify` 逐文件 sha256；`--prune-old` 旧备份软移 `superseded/`
+- `--verify` 逐文件 sha256 校验
 
 ## recover.py —— 用「备份 + 镜像」重建原文
 

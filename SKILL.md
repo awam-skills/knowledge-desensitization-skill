@@ -124,8 +124,9 @@ python scripts/recover.py --data-root <root> --verify --source <源目录>
 - `--with-literals`：把 `config/literals.json`（**含明文**）放进 `offline/`（介质须安全）
 - `--with-reports`：把 `reports/`（含「敏感文件名索引」）放进 `meta/`；**默认不打包、绝不入 cloud**
 - `--bitwarden-export <文件>`：把你在终端生成的 Bitwarden 加密导出放进 `offline/bitwarden/`
-- `--verify`：逐文件比对 sha256；`--prune-old`：旧备份软移 `superseded/`
-- 产出根 `<dest>/knowledge-desensitization-backup-<ts>/`，`MANIFEST.json` 与 `RESTORE.md` 放**根**（保证 `cloud/` 干净）
+- `--verify`：逐文件比对 sha256
+- **默认「固定目录 + 增量更新」**：`<dest>/` 即备份根（直接放 `cloud/ offline/ meta/ superseded/ MANIFEST.json RESTORE.md`），重复执行只写「新增/变化」的文件、未变跳过，源里删掉的旧文件**软移** `superseded/<ts>/`
+- `--dated`：改回旧的日期快照 `<dest>/knowledge-desensitization-backup-<ts>/`；`--prune-old` 仅在此模式把旧日期目录软移 `superseded/`
 
 **Bitwarden 本体（D 级，非文件）怎么备份**：在你自己的终端
 `bw export --format encrypted_json --password "<口令>" --output bw-export.json`
