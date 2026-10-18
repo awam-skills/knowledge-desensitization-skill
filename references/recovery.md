@@ -41,6 +41,12 @@ python scripts/recover.py --data-root <root> --apply --in-place  # 就地还原�
 2. 从离线备份取回并放回：`vault/keys/age-key.txt`、`vault/map/salt.bin`、
    `vault/map/map.json`（+ 需要引用形态时再加 `vault/map/bw-items.json`）。
 3. 取回脱敏镜像，放到 `<新根>/sanitized/notes/`。
+
+> ⚠️ **跨机陷阱**：`workspace.json` 里记的是**绝对路径**。把数据根整个拷到别处后，
+> 它仍指向**原位置**的 mirror/source。恢复前务必二选一：
+> ① 重跑 `init_workspace.py --data-root <新根> ...` 重写 `workspace.json`；
+> ② 每个脚本都显式传 `--mirror <新根>/sanitized/notes`。
+> 否则脚本会去读旧路径下的镜像，可能被"看起来能跑"误导。
 4. 校验：`python scripts/recover.py --data-root <新根> --verify`
 5. 重建：`python scripts/recover.py --data-root <新根> --apply`
 6. 若备份含 `vault/raw/*.zip.age`，可交叉验证：
