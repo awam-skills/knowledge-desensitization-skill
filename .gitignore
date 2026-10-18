@@ -53,3 +53,6 @@ output/
 mapping*.json
 mapping*.csv
 residual*.json
+
+# Agent 工作区记忆（本机工作笔记，不是技能内容）
+.workbuddy/
