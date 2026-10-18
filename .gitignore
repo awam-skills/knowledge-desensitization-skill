@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# 工具与测试缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 环境与本地配置
+.env
+.env.*
+!.env.example
+
+# 技能的本机数据 / 本机配置（**别删**：技能仓会公开发布，这些一旦提交就等于公开）
+# 发布脚本（public_files.py）也会再兜一层，但从源头不进 git 才是第一道防线
+storage/
+env.json
+index.json
+_user_meta.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# 本地运行产物
+output/
+*.xlsx
+
+# 技能改进时的可恢复基线快照
+.skill-improve-baseline/
+
+# 脱敏运行产物：替换映射表与残留清单属于敏感物，永不入库
+mapping*.json
+mapping*.csv
+residual*.json

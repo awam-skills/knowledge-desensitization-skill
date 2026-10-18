@@ -1,0 +1,40 @@
+# Git 提交信息（Source Control 自动生成）
+
+When Cursor auto-generates a Git commit message for this repository, follow ALL rules below.
+
+## Hard requirements
+
+1. MUST use Conventional Commits: `<type>[!][(scope)]: <subject>`（scope optional）
+2. MUST write the subject (and body if any) in Simplified Chinese (简体中文)
+3. NEVER write the commit subject entirely in English
+4. NEVER use vague subjects: `update`, `fix bug`, `wip`, `misc`, `临时提交`
+5. Keep ONE concise subject line (≤72 characters); do NOT end with `。` or `.`
+6. Subject = WHAT changed (祈使：修复/新增/调整); body = WHY (optional); blank line between subject and body; wrap body ~72 chars; no file-list dump
+7. One commit = one concern; do NOT list filenames in the subject
+8. Allowed types (lowercase): feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+9. Preferred scopes for this repo (lowercase, optional): `scan`, `mask`, `scripts`；文档用 `docs` / `docs(<模块>)`，勿用 `docs(doc)`；CI 用 type `ci`，勿用 `chore(ci)`
+10. Breaking change: use `type(scope)!: …` and/or a footer `BREAKING CHANGE: …` in Chinese
+11. Revert: `revert: <原提交简述>` with body `This reverts commit <hash>.`
+12. Footers when useful: `Refs: #123` / `Closes: #123` / `Fixes: #123`
+13. NEVER commit secrets or the desensitization mapping table (`mapping*.json`, `residual*.json`) — they contain the very data this repo removes.
+
+## Examples (copy the style, not the English)
+
+- feat(scan): 新增内网 IP 与内部域名的识别规则
+- fix(mask): 修复双链代号化后大小写不一致的问题
+- refactor(scripts): 抽出替换映射表的读写模块
+- docs(scan): 补充敏感类型清单与判定口径
+- ci: 增加提交前敏感串扫描
+- chore: 同步 awam-git 提交规范
+- revert: 新增手机号与邮箱的识别规则
+
+## Wrong vs right
+
+- ❌ `Add regex rules for phone numbers.`
+- ✅ `feat(scan): 新增手机号识别规则`
+- ❌ `fix: update regex`
+- ✅ `fix(scan): 修复邮箱正则误吞尾随标点`
+- ❌ `chore(ci): update workflow`
+- ✅ `ci: 调整敏感串扫描的触发分支`
+- ❌ `docs(doc): update readme`
+- ✅ `docs: 补充双链保留的判定口径`
