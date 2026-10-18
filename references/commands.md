@@ -90,16 +90,25 @@ python scripts/vault_prune.py --data-root <root> [--apply]
 对 `vault/raw/*.zip.age`、`vault/map/bw-import-*.json`、`vault/preview/preview-*.html`
 各留最新 1 份，其余**软移** `superseded/`。`--apply` 才执行。
 
-## offline_backup.py —— 离线恢复备份
+## offline_backup.py —— 分层离线备份（可上云 / 必须离线）
 
 ```bash
-python scripts/offline_backup.py --data-root <root> --dest <目录> \
-    [--include-archives] [--include-literals] [--verify] [--prune-old]
+python scripts/offline_backup.py --data-root <root> --dest <目录> [--verify] \
+    [--with-literals] [--with-reports] [--bitwarden-export <文件>] [--prune-old]
 ```
 
-- 必须件：`age-key.txt`、`salt.bin`、`map.json`
-- 产出 `<dest>/knowledge-desensitization-backup-<ts>/` + `MANIFEST.json` + `RESTORE.md`
-- `--verify` 逐文件 sha256；`--prune-old` 旧备份软移
+按敏感度**拆成三个子目录**，直接对应网盘/离线两条去路：
+
+| 子目录 | 级别 | 内容 | 去路 |
+|---|---|---|---|
+| `cloud/` | A+B | 脱敏镜像 `<name>/`、`archive/*.zip.age` | **只有这两类、无其他文件 → 整目录上传网盘/Git** |
+| `offline/` | C+D | `vault/keys`、`vault/map/{salt,map,bw-items}`、（`--with-literals`）`config/literals.json`、（`--bitwarden-export`）`bitwarden/` | **手动拷到离线介质** |
+| `meta/` | — | 配置 `rules/whitelist/exclude`；（`--with-reports`）reports | 非密，**不上云** |
+
+- 产出 `<dest>/knowledge-desensitization-backup-<ts>/`，根放 `MANIFEST.json` + `RESTORE.md`（**保证 `cloud/` 干净**）
+- `--with-reports` 默认关：报告含「敏感文件名索引」，不上云，仅落 `meta/reports/`
+- `--with-literals` 默认关：literals 含明文，落 `offline/`，介质须安全
+- `--verify` 逐文件 sha256；`--prune-old` 旧备份软移 `superseded/`
 
 ## recover.py —— 用「备份 + 镜像」重建原文
 

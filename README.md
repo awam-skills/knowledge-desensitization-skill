@@ -51,8 +51,9 @@ python scripts/sanitize.py --data-root G:/Knowledge/data --apply  # dry-run 去�
 # 2.5 回填「见保险库：xxx」
 python scripts/backfill.py --data-root G:/Knowledge/data --apply
 
-# 2.6 离线恢复备份（U 盘 / 加密网盘）
+# 2.6 分层离线备份（A+B 可上云 / C+D 必须离线）
 python scripts/offline_backup.py --data-root G:/Knowledge/data --dest E:/kd-backup --verify
+#   产出 cloud/（镜像+加密档，直接上传网盘）、offline/（密钥材料，手动拷贝）、meta/（配置）
 ```
 
 每一步都会打印**计数与路径**，不打印任何凭据值。
@@ -115,7 +116,8 @@ chmod +x .git/hooks/pre-commit
 **Q：镜像里的 `[REDACTED:...]` 还能还原吗？**
 能，只要 `vault/map/map.json` + `vault/map/salt.bin` 在。用 `scripts/recover.py` 用「备份 + 镜像」整体重建，
 或用 `scripts/restore.py` 按单个 token 填回。
-**这三件套 + age 私钥丢了就永远还原不了** —— 所以务必 `offline_backup.py` 做离线备份。
+**这三件套 + age 私钥丢了就永远还原不了** —— 所以务必 `offline_backup.py` 做分层离线备份
+（`cloud/` 上传网盘、`offline/` 拷到离线介质）。
 
 **Q：需要 Bitwarden 才能恢复吗？**
 不需要。原文真相源是 `map.json`（含 token→原值）；Bitwarden 只是方便取用的副本，`bw-items.json` 不含原值。

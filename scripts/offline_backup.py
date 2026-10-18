@@ -1,26 +1,42 @@
 # AI生成
-"""offline_backup.py — 把「恢复所必需」的文件一次性拷贝到用户指定目录（U 盘/加密网盘）。
+"""offline_backup.py — 按敏感度分层，把备份拆成「可上云」与「必须离线」两个目录。
 
-丢失即不可逆的**必须三件套**：
-    vault/keys/age-key.txt     age 私钥（解密原始归档）
-    vault/map/salt.bin         HMAC salt（token 稳定性的根）
-    vault/map/map.json         token ↔ 原文 映射
+用户需求（2026-10-18）
+- A+B（脱敏镜像 + 加密快照）放同一目录 `cloud/`，**该目录内不含任何其他文件**，
+  可直接整目录上传网盘 / 私有 Git。
+- C+D（密钥材料 + Bitwarden 映射）放同一目录 `offline/`，方便一次性手动拷贝到
+  离线介质（U 盘 / 密码管理器）。
+- reports 经评估**不进 cloud**：它虽无明文，但含「哪些文件含凭据」的索引，属敏感元数据，
+  且对恢复无用；需要审计留存时放 `meta/reports/`（默认不打包，`--with-reports` 才含）。
 
-可选：
-    vault/map/bw-items.json    导入映射（回填用）
-    vault/raw/*.zip.age        原始加密归档        （--include-archives）
-    config/literals.json       字面量清单（含明文！目标盘本身须安全）
-    config/rules.json / whitelist.json / exclude.json
-    config/*.bak-*             字面量备份
+产出结构
+    <dest>/knowledge-desensitization-backup-<ts>/
+        cloud/                     ← 直接上传（只有 A+B）
+            <name>/                 A: 脱敏镜像（可直接喂向量库）
+            archive/                B: age 加密快照 *.zip.age（存在时）
+        offline/                   ← 手动拷到离线介质（只有 C+D）
+            vault/keys/age-key.txt
+            vault/map/salt.bin
+            vault/map/map.json
+            vault/map/bw-items.json         （存在时）
+            config/literals.json            （--with-literals；含明文）
+            bitwarden/<export>.json         （--bitwarden-export；D 级导出副本）
+        meta/                      ← 不上云、非密钥：配置与（可选）审计
+            config/{rules,whitelist,exclude}.json
+            reports/                （--with-reports 才含）
+        MANIFEST.json              ← 每个文件的 tier/字节/sha256（放根，cloud 保持干净）
+        RESTORE.md                 ← 分层保存与恢复说明
+
+Bitwarden 本体（D 级，不是文件、不在本目录）
+    见 RESTORE.md「Bitwarden 本体备份方法」；用 `--bitwarden-export <文件>` 可把
+    你自己在终端生成的**加密导出**一并放进 offline/bitwarden/。
 
 安全
 - 只输出「路径 + 字节数 + sha256」，绝不打印任何文件内容（可能是明文）。
-- --include-archives/--include-literals 默认关闭；开启时给出安全提醒。
-- 拷贝后重算哈希核对，写 MANIFEST.json 与 RESTORE.md。
 
 用法
-    python scripts/offline_backup.py --data-root <根> --dest <目标目录> [--verify]
-        [--include-archives] [--include-literals] [--prune-old]
+    python scripts/offline_backup.py --data-root <根> --dest <目标目录> [--verify] \
+        [--with-literals] [--with-reports] [--bitwarden-export <文件>] [--prune-old]
 """
 from __future__ import annotations
 
@@ -28,6 +44,7 @@ import argparse
 import datetime as dt
 import glob
 import hashlib
+import json
 import os
 import shutil
 import sys
@@ -44,48 +61,64 @@ def sha256(path: str) -> str:
     return h.hexdigest()
 
 
-def collect(root: str, include_archives: bool, include_literals: bool) -> list[str]:
-    items: list[str] = []
-    must = [
+def _collect_under(root: str, rels: list[str]) -> list[str]:
+    return [r for r in rels if os.path.exists(os.path.join(root, r))]
+
+
+def offline_rels(root: str, with_literals: bool) -> list[str]:
+    """C+D：必须离线的密钥材料。"""
+    rels = [
         os.path.join("vault", "keys", "age-key.txt"),
         os.path.join("vault", "map", "salt.bin"),
         os.path.join("vault", "map", "map.json"),
+        os.path.join("vault", "map", "bw-items.json"),
     ]
-    opt = [os.path.join("vault", "map", "bw-items.json"),
-           os.path.join("config", "rules.json"),
-           os.path.join("config", "whitelist.json"),
-           os.path.join("config", "exclude.json")]
-    for rel in must + opt:
-        p = os.path.join(root, rel)
-        if os.path.exists(p):
-            items.append(rel)
-    if include_archives:
-        for p in sorted(glob.glob(os.path.join(root, "vault", "raw", "*.zip.age"))):
-            items.append(os.path.relpath(p, root))
-    if include_literals:
-        for pat in ("config/literals.json", "config/literals.json.bak-*"):
-            for p in sorted(glob.glob(os.path.join(root, *pat.split("/")))):
-                items.append(os.path.relpath(p, root))
-    # 去重保序
-    seen, out = set(), []
-    for it in items:
-        if it not in seen:
-            seen.add(it)
-            out.append(it)
-    return out
+    if with_literals:
+        rels.append(os.path.join("config", "literals.json"))
+        for p in sorted(glob.glob(os.path.join(root, "config", "literals.json.bak-*"))):
+            rels.append(os.path.relpath(p, root))
+    return _collect_under(root, rels)
+
+
+def meta_rels(root: str, with_reports: bool) -> list[str]:
+    """非密但有用的辅助：配置（whitelist 不可再生）+（可选）审计报告。"""
+    rels = [
+        os.path.join("config", "rules.json"),
+        os.path.join("config", "whitelist.json"),
+        os.path.join("config", "exclude.json"),
+    ]
+    rels = _collect_under(root, rels)
+    if with_reports:
+        rdir = paths.reports_dir(root)
+        for p in sorted(glob.glob(os.path.join(rdir, "**", "*"), recursive=True)):
+            if os.path.isfile(p):
+                rels.append(os.path.relpath(p, root))
+    return rels
+
+
+def archive_paths(root: str) -> list[str]:
+    return sorted(glob.glob(os.path.join(root, "vault", "raw", "*.zip.age")))
+
+
+def copy_file(src: str, dst: str) -> int:
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    shutil.copy2(src, dst)
+    return os.path.getsize(src)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     paths.add_root_arg(ap)
-    ap.add_argument("--dest", required=True, help="备份目标目录（可为 U 盘）")
-    ap.add_argument("--include-archives", action="store_true",
-                    help="连同 vault/raw/*.zip.age 原始加密档一起备份")
-    ap.add_argument("--include-literals", action="store_true",
-                    help="连同 config/literals.json（含明文）一起备份（目标盘须安全）")
+    ap.add_argument("--dest", required=True, help="备份目标目录（可为 U 盘 / 同步盘）")
+    ap.add_argument("--with-literals", action="store_true",
+                    help="把 config/literals.json（含明文）纳入 offline/（目标介质须安全）")
+    ap.add_argument("--with-reports", action="store_true",
+                    help="把 reports/ 纳入 meta/（默认不打包：含敏感文件索引，不上云）")
+    ap.add_argument("--bitwarden-export", metavar="FILE",
+                    help="你在终端生成的 Bitwarden 加密导出文件，一并放入 offline/bitwarden/")
     ap.add_argument("--verify", action="store_true", help="拷后重算哈希核对")
     ap.add_argument("--prune-old", action="store_true",
-                    help="目标目录下旧的同名备份软移，只留最新")
+                    help="目标目录下旧备份软移 superseded/，只留最新")
     args = ap.parse_args()
 
     root = paths.resolve_data_root(args.data_root)
@@ -94,87 +127,144 @@ def main() -> int:
         print(f"目标目录不存在：{dest_base}", file=sys.stderr)
         return 2
 
-    rels = collect(root, args.include_archives, args.include_literals)
-    if not rels:
-        print("没有可备份的文件（vault/ 是否已初始化？）", file=sys.stderr)
-        return 2
+    ws = paths.load_workspace(root)
+    name = ws.get("name") or "notes"
+    mirror = paths.default_mirror(root)
 
     ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     outdir = os.path.join(dest_base, f"knowledge-desensitization-backup-{ts}")
     os.makedirs(outdir, exist_ok=True)
 
     manifest = {"created": dt.datetime.now().isoformat(timespec="seconds"),
-                "data_root": root, "files": []}
+                "data_root": root, "name": name, "files": []}
     total = 0
-    for rel in rels:
-        s = os.path.join(root, rel)
-        d = os.path.join(outdir, rel)
-        os.makedirs(os.path.dirname(d), exist_ok=True)
-        shutil.copy2(s, d)
-        size = os.path.getsize(s)
-        h = sha256(s)
-        ok = None
-        if args.verify:
-            ok = (sha256(d) == h)
-        manifest["files"].append({"path": rel, "bytes": size,
-                                  "sha256": h, "verified": ok})
+
+    def record(tier: str, rel_in_backup: str, src_abs: str) -> None:
+        nonlocal total
+        size = os.path.getsize(src_abs)
+        h = sha256(src_abs)
+        ok = True if not args.verify else (sha256(os.path.join(outdir, rel_in_backup)) == h)
+        manifest["files"].append({"tier": tier, "path": rel_in_backup,
+                                  "bytes": size, "sha256": h, "verified": ok})
         total += size
-        flag = "" if ok is None else (" ✓" if ok else " ✗")
-        print(f"  {rel}  ({size} B){flag}")
+        flag = "" if not args.verify else (" ✓" if ok else " ✗")
+        print(f"  [{tier}] {rel_in_backup}  ({size} B){flag}")
+
+    # ---- cloud/ : A + B ----
+    print("cloud/  ← A 脱敏镜像 + B 加密快照（可直接上传）")
+    if mirror and os.path.isdir(mirror):
+        dst = os.path.join(outdir, "cloud", name)
+        shutil.copytree(mirror, dst, dirs_exist_ok=True)
+        for dp, _dn, fns in os.walk(dst):
+            for fn in fns:
+                p = os.path.join(dp, fn)
+                record("cloud", os.path.relpath(p, outdir), p)
+    else:
+        print("  ⚠️  未找到脱敏镜像（cloud/ 将不含 A 层；恢复需要它）", file=sys.stderr)
+    for a in archive_paths(root):
+        rel = os.path.join("cloud", "archive", os.path.basename(a))
+        copy_file(a, os.path.join(outdir, rel))
+        record("cloud", rel, a)
+
+    # ---- offline/ : C + D ----
+    print("offline/  ← C 密钥材料 + D Bitwarden 映射（手动拷到离线介质）")
+    for rel in offline_rels(root, args.with_literals):
+        copy_file(os.path.join(root, rel), os.path.join(outdir, "offline", rel))
+        record("offline", os.path.join("offline", rel), os.path.join(root, rel))
+    if args.bitwarden_export:
+        src = os.path.abspath(args.bitwarden_export)
+        if os.path.isfile(src):
+            rel = os.path.join("offline", "bitwarden", os.path.basename(src))
+            copy_file(src, os.path.join(outdir, rel))
+            record("offline", rel, src)
+        else:
+            print(f"  ⚠️  --bitwarden-export 文件不存在：{src}", file=sys.stderr)
+
+    # ---- meta/ : 配置（+可选报告）----
+    print("meta/  ← 配置/审计（不上云）")
+    for rel in meta_rels(root, args.with_reports):
+        copy_file(os.path.join(root, rel), os.path.join(outdir, "meta", rel))
+        record("meta", os.path.join("meta", rel), os.path.join(root, rel))
+
+    if not manifest["files"]:
+        print("没有可备份的文件（vault/ 是否已初始化？）", file=sys.stderr)
+        return 2
 
     with open(os.path.join(outdir, "MANIFEST.json"), "w", encoding="utf-8") as fh:
-        import json
         json.dump(manifest, fh, ensure_ascii=False, indent=2)
 
-    restore_md = f"""# 离线备份 / 恢复说明
+    # ---- RESTORE.md ----
+    counts = {}
+    for f in manifest["files"]:
+        counts[f["tier"]] = counts.get(f["tier"], 0) + 1
+    restore_md = f"""# 离线备份 / 分层保存说明
 
 - 备份时间：{manifest['created']}
-- 源数据根：`{root}`
-- 文件数：{len(manifest['files'])}，合计 {total} 字节
+- 源数据根：`{root}`　　数据集名：`{name}`
+- 文件总数：{len(manifest['files'])}，合计 {total} 字节
+  （cloud {counts.get('cloud',0)} / offline {counts.get('offline',0)} / meta {counts.get('meta',0)}）
 
-## 为什么这些文件重要
+## 目录含义与去路
 
-| 文件 | 丢失后果 |
-|------|----------|
-| `vault/keys/age-key.txt` | 无法解密 `vault/raw/*.zip.age` 原始归档 |
-| `vault/map/salt.bin` | token 不再稳定，重跑会生成不同占位符 |
-| `vault/map/map.json` | 无法把占位符还原成原文 |
+| 目录 | 级别 | 内容 | 保存途径 |
+|---|---|---|---|
+| `cloud/` | A+B | `{name}/` 脱敏镜像、`archive/*.zip.age` 加密快照 | **直接整目录上传**网盘 / 私有 Git |
+| `offline/` | C+D | `age-key.txt`、`salt.bin`、`map.json`、`bw-items.json`（+`literals.json`/`bitwarden/`） | **离线**：U 盘×2 / 密码管理器 / 保险柜；**禁止上云/入 Git** |
+| `meta/` | — | 配置（rules/whitelist/exclude）；（可选）reports | 非密，可留存；**不与 cloud 混放** |
+| `MANIFEST.json` | — | 每个文件的 tier/sha256 | 校验用 |
 
-**这三件套丢失 = 脱敏镜像不可逆。** 请务必离线保存（U 盘 / 加密网盘），
-并与镜像分开存放。
+**核心原则：密文与钥匙分道。** `cloud/` 能公开（镜像已脱敏、快照已加密）；
+`offline/` 一旦泄露 = 全盘明文。
 
 ## 恢复步骤（备份 + 脱敏镜像 → 原始知识库）
 
-前提：你还有脱敏镜像 `sanitized/<name>/`（可放网盘/私有 Git）。
+前置：`recover.py` 需要 `map.json`（offline 层）+ 脱敏镜像（cloud 层）。
 
-1. 在新机器的数据根创建 `vault/` 结构，把本备份的 `vault/` 与 `config/` 覆盖回去。
-2. 把脱敏镜像放回 `<新根>/sanitized/<name>/`。
-3. **校验可逆性**：`python scripts/recover.py --data-root <新根> --verify`
-   （若源目录还在，加 `--source <源>` 会逐字节比对，期望「不一致 0」）
-4. **重建**：`python scripts/recover.py --data-root <新根> --apply`
-   → 产出 `<新根>/recovered/<name>/`（`--in-place` 则就地还原镜像，之后即含明文，勿再分享）
-5. 若备份含 `vault/raw/*.zip.age`，可交叉验证：
-   `age -d -i vault/keys/age-key.txt vault/raw/<file>.zip.age > notes.zip`
-6. 对照本目录 `MANIFEST.json` 的 sha256 核对完整性。
+1. 新建数据根：`python scripts/init_workspace.py --data-root <新根> --source <源> --name {name}`
+2. 把 `offline/` 下的 `vault/`、`config/` 覆盖回 `<新根>/`（保持相对路径）。
+3. 把 `cloud/{name}/` 放回 `<新根>/sanitized/{name}/`。
+4. 校验：`python scripts/recover.py --data-root <新根> --verify [--source <源>]`
+5. 重建：`python scripts/recover.py --data-root <新根> --apply` → `<新根>/recovered/{name}/`
+6. 交叉验证（若有 `cloud/archive/*.zip.age`）：
+   `age -d -i vault/keys/age-key.txt <file>.zip.age > notes.zip`
+7. 对照 `MANIFEST.json` 的 sha256 核对完整性。
 
-> 说明：`bw-items.json` 不含原文，只为把「见保险库：xxx」这种**引用形态**还原回 token；
-> 若镜像里的凭据仍是 `[REDACTED:...]` **token 形态**，只靠 `map.json` 即可还原。
-> **Bitwarden 是否可用，不影响恢复。**
+> ⚠️ 跨机陷阱：`workspace.json` 存的是**绝对路径**，换机后务必重跑 `init_workspace.py`
+> 或给脚本显式 `--mirror <新根>/sanitized/{name}`。
+
+## Bitwarden 本体备份方法（D 级，不是文件）
+
+Bitwarden 保险库不在本目录。请**在你自己的终端**执行加密导出（需主密码，Agent 不代做）：
+
+```
+bw export --format encrypted_json --password "<导出口令>" --output bw-export.json
+```
+
+- `--format encrypted_json` = 加密导出（用你另设的导出口令保护），可安全存放；
+- 想并入本备份：把生成的 `bw-export.json` 用 `--bitwarden-export <文件>` 重跑一次，
+  它会落到 `offline/bitwarden/`（**仍属离线层，勿上云**）；
+- **不要**用 `--format json`（明文导出）。
 
 ## 安全
 
-- 本目录含**秘密材料**，禁止提交到任何 Git 仓库、禁止上传到公开位置。
-- 若勾选了 `--include-literals`，本目录还含字面量明文，请确保介质本身安全。
+- `offline/` 含秘密材料：禁止提交任何 Git 仓库、禁止上传公开位置。
+- 若含 `--with-literals`，`offline/` 还含字面量明文，务必确保介质本身安全。
+- `cloud/` 可上传，但请注意镜像里仍保留 PII 占位符（设计如此）。
 """
     with open(os.path.join(outdir, "RESTORE.md"), "w", encoding="utf-8") as fh:
         fh.write(restore_md)
 
     bad = [f for f in manifest["files"] if f.get("verified") is False]
     print(f"\n已备份 {len(manifest['files'])} 个文件，合计 {total} 字节")
-    print("目标目录：", outdir)
+    print("备份目录：", outdir)
+    print("  ├─ cloud/    （可直接上传网盘）")
+    print("  ├─ offline/  （手动拷到离线介质）")
+    print("  ├─ meta/     （配置/审计，不上云）")
+    print("  ├─ MANIFEST.json")
+    print("  └─ RESTORE.md")
     if args.verify:
         print("校验：", "全部通过 ✓" if not bad else f"有 {len(bad)} 个不匹配 ✗")
-    if args.include_literals:
+    if args.with_literals:
         print("⚠️  已包含 literals.json（含明文），请确保目标介质本身安全。")
 
     if args.prune_old:

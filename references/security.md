@@ -67,14 +67,16 @@ chmod +x .git/hooks/pre-commit
 
 > 会话密钥 `BW_SESSION` 泄漏的处理：导入流程收尾会 `bw lock` 使该会话失效；仍然建议重新解锁。
 
-## 7. 备份（恢复能力）
+## 7. 备份（恢复能力，按敏感度分层）
 
-`offline_backup.py` 把恢复关键件一次性拷到用户指定目录：
+`offline_backup.py` 按敏感度拆成三个子目录，对应网盘/离线两条去路：
 
-- 必须件：`vault/keys/age-key.txt`、`vault/map/salt.bin`、`vault/map/map.json`
-- 可选件：`vault/map/bw-items.json`、`config/{rules,whitelist,exclude}.json`
-- `--include-archives`：`vault/raw/*.zip.age`
-- `--include-literals`：`config/literals.json`（**含明文**，介质需安全）
+- `cloud/`（A+B）：脱敏镜像 + `archive/*.zip.age` 加密快照 —— **只有这两类、无其他文件，可整目录上传**
+- `offline/`（C+D）：`vault/keys/age-key.txt`、`vault/map/{salt.bin,map.json,bw-items.json}`，
+  可选 `--with-literals` 的 `config/literals.json`、`--bitwarden-export` 的 `bitwarden/` —— **手动拷到离线介质**
+- `meta/`：配置 `rules/whitelist/exclude`；`--with-reports` 时的 reports —— 非密，**不上云**
 - `--verify` 逐文件 sha256 校验；`--prune-old` 旧备份软移
 
-> 三件套丢失 = 镜像里的 `[REDACTED]` 永不可逆。请 `--dest` 指向 U 盘或加密网盘。
+> 三件套（`age-key.txt`/`salt.bin`/`map.json`）丢失 = 镜像里的 `[REDACTED]` 永不可逆；
+> `offline/` 请指向 U 盘/密码管理器/保险柜，**禁止网盘与 Git**。
+> reports 含「哪些文件含凭据」的索引，故不随 `cloud/` 上云。

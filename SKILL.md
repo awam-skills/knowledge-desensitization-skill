@@ -93,7 +93,7 @@ python scripts/backfill.py --data-root <root> --apply
 python scripts/vault.py --data-root <root> keygen     # 首次
 python scripts/vault.py --data-root <root> encrypt    # 产出 vault/raw/<name>-<ts>.zip.age
 
-# 6. 离线恢复备份（一次性把恢复关键件拷到用户指定目录）
+# 6. 分层离线备份（A+B 可上云 / C+D 必须离线）
 python scripts/offline_backup.py --data-root <root> --dest <备份目录> --verify
 
 # 7. 校验「备份 + 镜像」可逆（不写盘；给了 --source 会与源逐字节比对）
@@ -111,16 +111,25 @@ python scripts/recover.py --data-root <root> --verify --source <源目录>
 | 组合口令（A/B/C/D 片段拼装） | `python scripts/add_pair_literal.py --data-root <root> ...` |
 | 只想看 literals 结构、不泄露明文 | `python scripts/literals_summary.py --data-root <root>`（唯一允许的入口） |
 
-## 离线备份（能力说明）
+## 离线备份（分层：可上云 / 必须离线）
 
-`offline_backup.py` 把「缺了就再也还原不了」的文件一次性拷到 `--dest` 指定目录：
+`offline_backup.py` 按敏感度拆成三个子目录，直接对应网盘与离线两条去路：
 
-- **必须件（缺任一不可恢复）**：`vault/keys/age-key.txt`、`vault/map/salt.bin`、`vault/map/map.json`
-- **可选件**：`vault/map/bw-items.json`、`config/{rules,whitelist,exclude}.json`
-- `--include-archives`：追加 `vault/raw/*.zip.age`（原始加密快照）
-- `--include-literals`：追加 `config/literals.json`（**含明文**，介质需安全）
+| 子目录 | 级别 | 内容 | 去路 |
+|---|---|---|---|
+| `cloud/` | A+B | 脱敏镜像 `<name>/`、`archive/*.zip.age` | **只有这两类、无其他文件 → 整目录上传网盘/Git** |
+| `offline/` | C+D | `vault/keys`、`vault/map/{salt,map,bw-items}`，可选 `config/literals.json`、`bitwarden/` | **手动拷到离线介质** |
+| `meta/` | — | 配置 `rules/whitelist/exclude`；可选 reports | 非密，**不上云** |
+
+- `--with-literals`：把 `config/literals.json`（**含明文**）放进 `offline/`（介质须安全）
+- `--with-reports`：把 `reports/`（含「敏感文件名索引」）放进 `meta/`；**默认不打包、绝不入 cloud**
+- `--bitwarden-export <文件>`：把你在终端生成的 Bitwarden 加密导出放进 `offline/bitwarden/`
 - `--verify`：逐文件比对 sha256；`--prune-old`：旧备份软移 `superseded/`
-- 产出 `<dest>/knowledge-desensitization-backup-<ts>/`，含 `MANIFEST.json` 与 `RESTORE.md`
+- 产出根 `<dest>/knowledge-desensitization-backup-<ts>/`，`MANIFEST.json` 与 `RESTORE.md` 放**根**（保证 `cloud/` 干净）
+
+**Bitwarden 本体（D 级，非文件）怎么备份**：在你自己的终端
+`bw export --format encrypted_json --password "<口令>" --output bw-export.json`
+（加密导出，勿用明文 `--format json`），再用 `--bitwarden-export` 并入 `offline/`。
 
 **恢复靠 `map.json`，不靠 Bitwarden**：`recover.py` 用 `备份 + 脱敏镜像` 重建原文，
 同时处理 `[REDACTED:...]`（token 形态）与「见保险库：xxx」（引用形态）：
