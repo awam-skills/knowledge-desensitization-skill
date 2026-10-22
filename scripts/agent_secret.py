@@ -306,19 +306,38 @@ def audit_append(root: str, rec: dict) -> None:
         fh.write(json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n")
 
 
-def audit_tail(root: str, n: int) -> int:
+def audit_rows(root: str, n: int) -> list:
+    """审计尾部 n 条（结构化，**不含值**）；CLI 与 MCP 共用。n<=0 = 全部。"""
     p = audit_path(root)
     if not os.path.exists(p):
-        print("尚无审计记录：%s" % p)
-        return 0
+        return []
     with open(p, encoding="utf-8") as fh:
         lines = fh.read().splitlines()
-    print("审计：%s（共 %d 条，显示末 %d 条）" % (p, len(lines), min(n, len(lines))))
-    for ln in lines[-n:]:
+    out = []
+    for ln in (lines[-n:] if n > 0 else lines):
         try:
-            r = json.loads(ln)
+            out.append(json.loads(ln))
         except json.JSONDecodeError:
             continue
+    return out
+
+
+def audit_count(root: str) -> int:
+    p = audit_path(root)
+    if not os.path.exists(p):
+        return 0
+    with open(p, encoding="utf-8") as fh:
+        return len(fh.read().splitlines())
+
+
+def audit_tail(root: str, n: int) -> int:
+    p = audit_path(root)
+    rows = audit_rows(root, n)
+    if not rows:
+        print("尚无审计记录：%s" % p)
+        return 0
+    print("审计：%s（共 %d 条，显示末 %d 条）" % (p, audit_count(root), len(rows)))
+    for r in rows:
         print("  %s  %-10s %-6s %-9s %-34s %s"
               % (r.get("ts", "?"), r.get("principal", "?"), r.get("action", "?"),
                  r.get("result", "?"), r.get("entry", "") or "-",
@@ -575,58 +594,72 @@ def cmd_audit(root: str, args) -> int:
 # 入口
 # ----------------------------------------------------------------------------
 
-def cmd_run(root: str, args) -> int:
-    """★把条目的值注入子进程 env 执行命令；值绝不回传模型（输出二次脱敏 + 审计不含值）。"""
+def run_secret(root: str, name: str, cmd: list, as_env: str | None = None,
+               as_file: str | None = None, token: str | None = None,
+               channel: str = "cli") -> dict:
+    """★run 内核（CLI 与 MCP 共用，**不分叉**）。返回结构化结果，**绝不含条目明文**。
+
+    返回 {principal, how, name, cmd_hash, ok, denied, reason, exit, stdout, stderr, redacted, ttl}
+    - stdout/stderr 已用 map.json 全量真值二次脱敏；denied/限额/错误时 ok=False 且 exit=13/2。
+    """
     policy = load_policy(root)
     entries = load_entries(root)
-    principal, how, cfg = resolve_caller(root, pick_token(args))
-    name = args.name
-    cmd = list(args.cmd or [])
+    principal, how, cfg = resolve_caller(root, token or "")
+    cmd = list(cmd or [])
     if cmd and cmd[0] == "--":
         cmd = cmd[1:]
     ch = cmd_hash(cmd)
-    if name not in entries:
-        print("无此条目：%s" % name, file=sys.stderr)
-        return 2
+    res = {"principal": principal, "how": how, "name": name, "cmd_hash": ch, "ok": False,
+           "denied": False, "reason": "", "exit": EXIT_DENIED, "stdout": "", "stderr": "",
+           "redacted": 0, "ttl": 0}
 
-    def _deny(reason: str) -> int:
-        print("[deny] %s —— %s" % (name, reason), file=sys.stderr)
-        audit_append(root, {"ts": _now(), "principal": principal, "channel": "cli",
-                            "action": "run", "entry": name, "result": "denied",
-                            "reason": reason, "ttl": 0, "cmd_hash": ch})
-        return EXIT_DENIED
+    def _audit(result: str, reason: str, ttl: int = 0, exit_code=None) -> None:
+        rec = {"ts": _now(), "principal": principal, "channel": channel, "action": "run",
+               "entry": name, "result": result, "reason": reason, "ttl": ttl, "cmd_hash": ch}
+        if exit_code is not None:
+            rec["exit"] = exit_code
+        audit_append(root, rec)
+
+    if name not in entries:
+        res["reason"] = "无此条目：%s" % name
+        res["exit"] = 2
+        return res
 
     unlock = window_active(root)
     ok, reason = judge(policy, cfg, principal, "run", name, entries[name], unlock)
     if not ok:
-        return _deny(reason)
+        res.update(denied=True, reason=reason)
+        _audit("denied", reason)
+        return res
 
     limit = int((cfg or {}).get("max_calls_per_hour") or policy.get("max_calls_per_hour") or 0)
     if limit > 0:
         used = count_recent(root, principal, "run", 3600)
         if used >= limit:
-            return _deny("超过 max_calls_per_hour=%d（近 1 小时已成功 %d 次）" % (limit, used))
+            reason = "超过 max_calls_per_hour=%d（近 1 小时已成功 %d 次）" % (limit, used)
+            res.update(denied=True, reason=reason)
+            _audit("denied", reason)
+            return res
 
     if not cmd:
-        print("run 需要在 `--` 之后给出命令，例如：\n"
-              "  agent_secret.py run --name <条目> --as-env API_KEY -- <命令...>", file=sys.stderr)
-        return 2
+        res["reason"] = ("run 需要在 `--` 之后给出命令，例如：\n"
+                         "  agent_secret.py run --name <条目> --as-env API_KEY -- <命令...>")
+        res["exit"] = 2
+        return res
 
     value = _resolve_value(root, name)
-    key = args.as_env or DEFAULT_ENV_KEY
     env = dict(os.environ)
-    env[key] = value
-    tmpfile = os.path.abspath(args.as_file) if args.as_file else None
+    env[as_env or DEFAULT_ENV_KEY] = value
+    tmpfile = os.path.abspath(as_file) if as_file else None
     if tmpfile:
         _write_private(tmpfile, value)
     try:
         proc = subprocess.run(cmd, env=env, capture_output=True)
     except (FileNotFoundError, OSError) as e:
-        print("命令无法执行：%s" % e, file=sys.stderr)
-        audit_append(root, {"ts": _now(), "principal": principal, "channel": "cli",
-                            "action": "run", "entry": name, "result": "error",
-                            "reason": type(e).__name__, "ttl": 0, "cmd_hash": ch})
-        return 2
+        res["reason"] = "命令无法执行：%s" % e
+        res["exit"] = 2
+        _audit("error", type(e).__name__)
+        return res
     finally:
         if tmpfile:                      # 自建临时件（含密）：先清零再删，避免残留
             try:
@@ -640,21 +673,30 @@ def cmd_run(root: str, args) -> int:
     values = load_values(root)
     out, n_out = redact_output(proc.stdout.decode("utf-8", "replace"), values, value)
     err, n_err = redact_output(proc.stderr.decode("utf-8", "replace"), values, value)
-    if out:
-        sys.stdout.write(out)
-    if err:
-        sys.stderr.write(err)
     n = n_out + n_err
-    audit_append(root, {"ts": _now(), "principal": principal, "channel": "cli",
-                        "action": "run", "entry": name,
-                        "result": "redacted_output" if n else "ok",
-                        "reason": ("输出二次脱敏 %d 处" % n) if n else "",
-                        "ttl": int((unlock or {}).get("ttl_sec") or 0), "cmd_hash": ch,
-                        "exit": proc.returncode})
-    if n:
-        print("\n[已拦截] 子进程输出中发现 %d 处密钥真值，已替换为 token（防借输出外泄）。" % n,
+    ttl = int((unlock or {}).get("ttl_sec") or 0)
+    res.update(ok=True, exit=proc.returncode, stdout=out, stderr=err, redacted=n, ttl=ttl,
+               reason=("输出二次脱敏 %d 处" % n) if n else "")
+    _audit("redacted_output" if n else "ok", res["reason"], ttl, proc.returncode)
+    return res
+
+
+def cmd_run(root: str, args) -> int:
+    """CLI 外壳：调 run_secret 内核，把**已脱敏**的输出写到本进程 stdout/stderr。"""
+    res = run_secret(root, args.name, args.cmd, as_env=args.as_env, as_file=args.as_file,
+                     token=pick_token(args), channel="cli")
+    if res["stdout"]:
+        sys.stdout.write(res["stdout"])
+    if res["stderr"]:
+        sys.stderr.write(res["stderr"])
+    if res["denied"]:
+        print("[deny] %s —— %s" % (res["name"], res["reason"]), file=sys.stderr)
+    elif not res["ok"]:
+        print(res["reason"], file=sys.stderr)
+    if res["redacted"]:
+        print("\n[已拦截] 子进程输出中发现 %d 处密钥真值，已替换为 token（防借输出外泄）。" % res["redacted"],
               file=sys.stderr)
-    return proc.returncode
+    return res["exit"]
 
 
 def cmd_unlock(root: str, args) -> int:
@@ -683,6 +725,26 @@ def cmd_lock(root: str, args) -> int:
     audit_append(root, {"ts": _now(), "principal": "user:" + by, "channel": "cli",
                         "action": "lock", "entry": "", "result": "ok", "reason": "",
                         "ttl": 0, "cmd_hash": ""})
+    return 0
+
+
+def cmd_mcp(root: str, args) -> int:
+    """★输出可直接粘贴的 MCP 客户端配置（P2）。本技能是唯一入口，用户/Agent 无需自己管 MCP。"""
+    sid = getattr(args, "id", None) or ""
+    sname = args.name or "agent-secret"
+    interp = args.interpreter or sys.executable
+    server = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                          "agent_secret_mcp.py"))
+    args_list = [server] + (["--id", sid] if sid else ["--data-root", root])
+    cfg = {"mcpServers": {sname: {"command": interp, "args": args_list,
+                                  "env": {"AGENT_SECRET_TOKEN": "${AGENT_SECRET_TOKEN}"}}}}
+    print("# 把下面片段并入 MCP 客户端配置（如 .mcp.json / claude_desktop_config.json）：")
+    print(json.dumps(cfg, ensure_ascii=False, indent=2))
+    print("# 让该 Agent 的环境里有 token（只显示一次，勿入 Git、勿贴聊天）：")
+    print('#   PowerShell:  setx AGENT_SECRET_TOKEN "agt_..."')
+    print("#   bash:        export AGENT_SECRET_TOKEN=agt_...")
+    print("# 暴露的工具：secret_list / secret_run / secret_audit"
+          "（**无 secret_get**——值永不出现在响应里）。")
     return 0
 
 
@@ -749,6 +811,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("lock", parents=[common], help="★用户本机：提前关闭解锁窗口")
     p.set_defaults(func=cmd_lock)
+
+    p = sub.add_parser("mcp", parents=[common], help="★输出 MCP 客户端配置（P2）")
+    p.add_argument("--name", help="MCP server 键名（默认 agent-secret）")
+    p.add_argument("--interpreter", help="python 解释器路径（默认当前解释器）")
+    p.set_defaults(func=cmd_mcp)
 
     p = sub.add_parser("audit", parents=[common], help="查看访问审计")
     p.add_argument("--tail", type=int, default=50)

@@ -1,7 +1,7 @@
 # 供 Agent 使用密钥（agent_secret.py · broker）
 
 > 决策依据：`docs/decisions/ADR-001-agent-secret-access.md`、`docs/features/F001-agent-secret-access.md`
-> 状态：**P0 + P1 已实现**（`list` / `enroll` / `whoami` / `policy` / `audit` / `run` / `unlock` / `lock`）；P2 待做（MCP 薄壳）。
+> 状态：**P0 + P1 + P2 已实现**（CLI：`list` / `enroll` / `whoami` / `policy` / `audit` / `run` / `unlock` / `lock` / `mcp`；MCP 薄壳 `scripts/agent_secret_mcp.py`）。
 
 ## 为什么这样设计（一句话）
 
@@ -113,10 +113,33 @@ python scripts/agent_secret.py lock --id <源id>          # 提前关闭
 - **已知限制（不设防）**：子进程若自行把值写盘/发网络，本层拦不住 —— 同机隔离上限见 ADR Risk；本能力定位是
   **收口 + 授权 + 审计 + 防误用**。
 
-## P2（待做）
+## P2（已实现）：MCP 薄壳
 
-MCP 薄壳：`secret_list` / `secret_run` / `secret_audit`（与 CLI 共用策略/审计内核），
-`mcp --print-config` 输出可直接粘贴的 `.mcp.json` 片段；技能作为统一入口，Agent 无需管理 MCP。
+**技能是唯一入口**：你不需要自己管 MCP——让技能生成配置：
+
+```bash
+python scripts/agent_secret.py mcp --id <源id>     # 打印可直接粘贴的 .mcp.json 片段
+```
+
+生成的片段（`command` 用当前解释器、`args` 带 `--id`、`env` 只留 `AGENT_SECRET_TOKEN` 占位）：
+
+```json
+{"mcpServers": {"agent-secret": {
+  "command": "<python>",
+  "args": ["<abs>/scripts/agent_secret_mcp.py", "--id", "<源id>"],
+  "env": {"AGENT_SECRET_TOKEN": "${AGENT_SECRET_TOKEN}"}}}}
+```
+
+- **传输**：stdio / JSON-RPC 2.0（一行一条消息）；方法支持 `initialize` / `tools/list` / `tools/call` / `ping`。
+- **只暴露 3 个工具，没有 `secret_get`**：
+  - `secret_list`（`tag?` / `limit?`）→ 元数据（名/标签/凭据位/敏感级），按 caller 授权过滤，**永不含值**。
+  - `secret_run`（`name` / `cmd[]` / `as_env?`）→ 返回**已二次脱敏**的 `stdout` / `stderr` / `exit_code` / `redacted` 数；越权/超限 → `isError=true`。
+  - `secret_audit`（`tail?`）→ 结构化审计尾部（不含值）。
+  - 显式调用 `secret_get`/`secret_show`/`secret_read`/`secret_value` → **明确拒绝**（红线）。
+- **与 CLI 共用内核不分叉**：MCP 直接 `import agent_secret`，调 `run_secret()` + `judge()` + `audit_rows()`；策略 / 窗口 / 限额 / 审计完全一致，`channel=mcp` 仅作审计标签。
+- 身份只从环境变量 `AGENT_SECRET_TOKEN` 取（由 MCP 客户端配置注入），MCP 进程不管理凭据。
+
+**已测证据（2026-10-22）**：合成库 `echo` 模式（子进程把明文打到 stdout）→ 响应里 `stdout` 已变成 `[REDACTED:secret:ccccdddd]`、`redacted=1`、**全响应无明文**；`tools/list` 恰 3 个工具且无 `secret_get`；调用 `secret_get` → `isError=true` 拒绝；审计出现 `channel=mcp` 行。真实库 `office`（长度模式，避免回传真值）同样全绿。
 
 ## 自测过程中修掉的 bug（教训）
 

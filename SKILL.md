@@ -225,7 +225,9 @@ python scripts/agent_secret.py audit  --id <源id> --tail 50
 - 策略 `<km>/config/agent-access.json`（`default: deny`）+ 每 caller `<km>/config/agents/<agent>.json`（只存 token 的 `sha256`）；
   审计 `<km>/reports/secret-access.jsonl`（不含值）；解锁窗口 `<km>/state/unlock.json`。细节见 `references/agent-access.md`。
 - 限额 `max_calls_per_hour` 生效；`run` 的输出会用 `map.json` 全部真值二次脱敏（防借输出外泄）。
-- P2（未实现）：MCP 薄壳（`secret_list` / `secret_run` / `secret_audit`）。
+- P2（已实现）：MCP 薄壳 `scripts/agent_secret_mcp.py`（stdio/JSON-RPC）；配置由技能生成
+  `python scripts/agent_secret.py mcp --id <源id>`——**技能是唯一入口**，用户/Agent 无需自己管 MCP。
+  只暴露 `secret_list` / `secret_run` / `secret_audit`（**没有 `secret_get`**，值永不出现在响应里）。
 
 ## 安全红线（务必遵守）
 

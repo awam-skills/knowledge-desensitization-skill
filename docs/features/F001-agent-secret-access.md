@@ -150,7 +150,7 @@ secret_list / secret_run / secret_audit        # 注意：不注册 secret_get
 |---|---|---|
 | **P0** ✅（2026-10-22 完成） | `list` + `enroll`（token）+ 策略骨架 + 审计 + 文档红线（**无值出口**） | 低 |
 | **P1** ✅（2026-10-22 完成） | `run`（env 注入 + 输出二次脱敏 + 退出码 13/透传）+ `unlock/lock`（600s 窗口）+ `max_calls_per_hour` 限额；AC-2/AC-3/AC-5/AC-8 全绿 | 中：已修 `fnmatch` 把 `[REDACTED:…]` 误当字符类的匹配缺陷 |
-| **P2** | MCP 薄壳（`secret_list`/`secret_run`/`secret_audit` + `mcp --print-config` + SKILL.md 接入说明） | 中：与 CLI 内核共用，勿分叉 |
+| **P2** ✅（2026-10-22 完成） | MCP 薄壳（`secret_list`/`secret_run`/`secret_audit` + `mcp --print-config` + SKILL.md 接入说明） | 中：已与 CLI 共用 `run_secret()` 内核，不分叉 |
 
 ## 业界对照（2026）
 

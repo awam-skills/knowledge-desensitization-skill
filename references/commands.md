@@ -238,6 +238,10 @@ python scripts/agent_secret.py run     --id <源id> --name "<条目>" --as-env K
 # ★用户本机（P1）：10 分钟解锁窗口，只免 require_approval；--ttl 上限 3600s
 python scripts/agent_secret.py unlock  --id <源id> --ttl 600 --yes [--scope "glob,glob"]
 python scripts/agent_secret.py lock    --id <源id>
+
+# ★MCP（P2）：技能生成客户端配置（唯一入口，用户无需自己管 MCP）
+python scripts/agent_secret.py mcp     --id <源id>          # 打印可粘贴的 .mcp.json 片段
+python scripts/agent_secret_mcp.py --id <源id>              # stdio MCP 服务本体（由客户端拉起）
 ```
 
 - **无读值出口**：任何子命令都不打印条目明文（值只在 P1 的 `run` 注入子进程 env）。
@@ -246,7 +250,8 @@ python scripts/agent_secret.py lock    --id <源id>
   （只存 token 的 `sha256` + 末 4 位提示）、`<km>/reports/secret-access.jsonl`（审计，不含值）。
 - P1（已实现）：`run --as-env KEY -- <cmd>`（注入 env + 输出二次脱敏 + 退出码透传 + `max_calls_per_hour` 限额）、
   `unlock --ttl 600 --yes` / `lock`（本机 10 分钟窗口，落 `<km>/state/unlock.json`）；模式只把 `*`/`?` 当通配。
-- P2（未实现）：MCP 薄壳（`secret_list` / `secret_run` / `secret_audit`）。
+- P2（已实现）：MCP 薄壳 `agent_secret_mcp.py`（stdio/JSON-RPC），只暴露 `secret_list` / `secret_run` / `secret_audit`；
+  与 CLI 共用 `run_secret()` 内核不分叉；配置用 `agent_secret.py mcp --id <源id>` 生成。
 - 详见 `references/agent-access.md`。
 
 ## pre-commit —— 提交前护栏
