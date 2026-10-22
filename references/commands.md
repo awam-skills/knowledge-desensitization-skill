@@ -217,7 +217,7 @@ python scripts/probe.py --data-root <km> [--dirs journals,pages] [--root <真源
 统计「关键词行内候选」与「无关键词高熵候选」，输出 `reports/probe-<ts>.{json,md}`；
 只含 文件:行号 + 长度/熵/字符类 + `sha256[:8]` 指纹，**不含原文**。
 
-## agent_secret.py —— 供 Agent「使用」密钥的 broker（P0，无值出口）
+## agent_secret.py —— 供 Agent「使用」密钥的 broker（P0/P1，无值出口）
 
 ```bash
 # ★用户本机（一次）：签发 caller token（只显示一次，交给 Agent 存进它自己的密钥库/环境变量）
@@ -230,13 +230,23 @@ python scripts/agent_secret.py whoami  --id <源id>
 python scripts/agent_secret.py list    --id <源id> [--tag <标签>] [--json]
 python scripts/agent_secret.py policy  --id <源id> --action list|run --name "<条目>"
 python scripts/agent_secret.py audit   --id <源id> --tail 50
+
+# ★用密钥（P1）：把值注入子进程 env，值绝不回传模型；拒绝=13，子进程退出码透传
+python scripts/agent_secret.py run     --id <源id> --name "<条目>" --as-env KEY -- <命令...>
+#   [--as-file <路径>]：改写入 600 临时文件（退出后先清零再删）
+
+# ★用户本机（P1）：10 分钟解锁窗口，只免 require_approval；--ttl 上限 3600s
+python scripts/agent_secret.py unlock  --id <源id> --ttl 600 --yes [--scope "glob,glob"]
+python scripts/agent_secret.py lock    --id <源id>
 ```
 
 - **无读值出口**：任何子命令都不打印条目明文（值只在 P1 的 `run` 注入子进程 env）。
 - 身份：`--caller-token` > `AGENT_SECRET_TOKEN`；未注册 = `anonymous`（只读 `public_tags` 元数据、不得 run）。
 - 落盘：`<km>/config/agent-access.json`（全局策略，`default=deny`）、`<km>/config/agents/<名>.json`
   （只存 token 的 `sha256` + 末 4 位提示）、`<km>/reports/secret-access.jsonl`（审计，不含值）。
-- P1（未实现）：`run --as-env KEY=... -- <cmd>`、`unlock --ttl 600` / `lock`、MCP 薄壳。
+- P1（已实现）：`run --as-env KEY -- <cmd>`（注入 env + 输出二次脱敏 + 退出码透传 + `max_calls_per_hour` 限额）、
+  `unlock --ttl 600 --yes` / `lock`（本机 10 分钟窗口，落 `<km>/state/unlock.json`）；模式只把 `*`/`?` 当通配。
+- P2（未实现）：MCP 薄壳（`secret_list` / `secret_run` / `secret_audit`）。
 - 详见 `references/agent-access.md`。
 
 ## pre-commit —— 提交前护栏

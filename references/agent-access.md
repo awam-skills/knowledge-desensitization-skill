@@ -1,7 +1,7 @@
 # 供 Agent 使用密钥（agent_secret.py · broker）
 
 > 决策依据：`docs/decisions/ADR-001-agent-secret-access.md`、`docs/features/F001-agent-secret-access.md`
-> 状态：**P0 已实现**（`list` / `enroll` / `whoami` / `policy` / `audit`）；P1 待做（`run` / `unlock` / MCP）。
+> 状态：**P0 + P1 已实现**（`list` / `enroll` / `whoami` / `policy` / `audit` / `run` / `unlock` / `lock`）；P2 待做（MCP 薄壳）。
 
 ## 为什么这样设计（一句话）
 
@@ -46,6 +46,9 @@ python scripts/agent_secret.py audit  --id <源id> --tail 50  # 访问审计
 | `policy --action list\|run --name <条目>` | Agent/运维 | 干跑授权判定，打印 `allow/deny + 原因`（无副作用） |
 | `audit --tail N` | Agent/运维 | 查看 `reports/secret-access.jsonl` |
 | `enroll --agent X --tags a,b [--ttl 600] [--max-calls 20] [--require-approval p] [--revoke] [--force]` | **用户本机** | 签发/吊销 caller token |
+| `run --name <条目> --as-env KEY -- <cmd...>` | Agent | ★把值注入**子进程 env** 执行命令；输出二次脱敏；退出码透传（拒绝=13） |
+| `unlock --ttl 600 --yes [--scope p1,p2]` | **用户本机** | 开启解锁窗口（默认 600s=10 分钟；上限 3600s） |
+| `lock` | **用户本机** | 提前关闭解锁窗口 |
 
 ## 文件（都在秘密材料目录内，永不外传）
 
@@ -86,8 +89,36 @@ python scripts/agent_secret.py audit  --id <源id> --tail 50  # 访问审计
   对 `map.json` 全部 272 个真值反查 **命中 0**；`--json` 视图同样 0。
 - 脚本内 `value` 只有一处引用（`_resolve_value()`，P1 `run` 预留），CLI 无任何读值路径。
 
-## P1 预告（未实现）
+## P1（已实现）：run / unlock / lock
 
-`run --name <条目> --as-env KEY=... -- <cmd>`（注入 env + 输出二次脱敏 + 退出码透传）、
-`unlock --ttl 600` / `lock`（本机 10 分钟窗口：只免 `require_approval`，不放宽范围）、
-MCP 薄壳（`secret_list` / `secret_run` / `secret_audit`，`mcp --print-config` 输出 `.mcp.json` 片段）。
+```bash
+# Agent：把值注入子进程 env（值绝不回传模型）
+python scripts/agent_secret.py run --id <源id> --name "[REDACTED:llm-key:xxxx]" \
+    --as-env OPENAI_API_KEY -- <命令...>
+#   可选 --as-file <路径>：改注入到一个 600 权限临时文件（子进程退出后**先清零再删**）
+
+# ★用户本机：10 分钟解锁窗口（只免 require_approval；须 --yes）
+python scripts/agent_secret.py unlock --id <源id> --ttl 600 --yes [--scope "p1,p2"]
+python scripts/agent_secret.py lock --id <源id>          # 提前关闭
+```
+
+- **退出码**：子进程退出码原样透传；**策略拒绝 = 13**；用法/内部错误 = 2。
+- **输出二次脱敏**：子进程 stdout/stderr 会先与 `map.json` 全部真值比对（不止本次注入的那个），
+  命中的替换为对应 token；另对**本次注入值**做 ≥8 字符分片兜底 → 审计记 `redacted_output`，并打印 `[已拦截]`。
+- **限额**：`max_calls_per_hour`（每 caller）按审计统计近 1 小时**成功**调用数，超限即拒绝（`denied` 不计入）。
+- **窗口语义**：窗口**只**免 `require_approval`；`allow_tags` / `deny_*` / 限额 / 审计全部照旧；
+  到期（`expires_at_epoch`）自动失效，`lock` 立即失效。`unlock` 必须带 `--yes`（本机人工确认），且 `--ttl` 上限 3600s。
+- **匹配语义**：`--require-approval` / `--deny-names` / `--scope` 的模式只把 `*` `?` 当通配，其余字符（含 `[]`）按字面
+  —— 因为条目名形如 `[REDACTED:label:hex]`，用 `fnmatch` 会把 `[...]` 误当字符类（**已修，见下方教训**）。
+- **已知限制（不设防）**：子进程若自行把值写盘/发网络，本层拦不住 —— 同机隔离上限见 ADR Risk；本能力定位是
+  **收口 + 授权 + 审计 + 防误用**。
+
+## P2（待做）
+
+MCP 薄壳：`secret_list` / `secret_run` / `secret_audit`（与 CLI 共用策略/审计内核），
+`mcp --print-config` 输出可直接粘贴的 `.mcp.json` 片段；技能作为统一入口，Agent 无需管理 MCP。
+
+## 自测过程中修掉的 bug（教训）
+
+- **`fnmatch` 把 `[REDACTED:...]` 当字符类** → `--require-approval` 永不命中，窗口形同虚设（红灯：窗口外仍 allow）。
+  改为自写 `name_match()`：仅 `*`/`?` 是通配，其余 `re.escape` 后按字面匹配。**同类模式匹配都要遵此**。

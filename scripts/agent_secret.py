@@ -9,14 +9,17 @@
 - **deny-by-default**：未注册=anonymous（只能读 public 标签元数据，不得 run）。
 - 审计不含值、不含命令原文。
 
-P0 子命令（无值出口）
+子命令
     list    列出条目的**元数据**（名/标签/凭据位/敏感级/是否放行）——永不含值
     enroll  用户本机签发/吊销 caller token（token 仅打印一次，落盘只存 sha256）
     whoami  打印当前 caller 的解析结果（principal / 通道 / 依据），不打印 token
     policy  干跑授权判定（--action list|run --name <条目>），打印 allow/deny + 原因
     audit   查看访问审计（--tail N）
+    run     ★把值注入子进程 env 执行命令；输出二次脱敏；值绝不回传（P1）
+    unlock  ★用户本机：开启解锁窗口（默认 600s=10 分钟，须 --yes）（P1）
+    lock    ★用户本机：提前关闭解锁窗口（P1）
 
-P1（未实现，见 F001 里程碑）：run（env 注入 + 输出二次脱敏）/ unlock+lock（10 分钟窗口）/ MCP 薄壳。
+待做 P2：MCP 薄壳（secret_list / secret_run / secret_audit）。
 
 用法
     set AGENT_SECRET_TOKEN=agt_...      # Agent 侧只需一个环境变量
@@ -36,12 +39,13 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import fnmatch
 import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -57,6 +61,12 @@ POLICY_NAME = "agent-access.json"
 AGENTS_DIRNAME = "agents"
 AUDIT_NAME = "secret-access.jsonl"
 TOKEN_PREFIX_KEY = "[REDACTED:"
+
+UNLOCK_NAME = "unlock.json"      # D2：本机解锁窗口状态
+MAX_UNLOCK_TTL = 3600            # 窗口上限（秒），防止把 10 分钟窗口开成永久
+EXIT_DENIED = 13                 # 策略拒绝的退出码（与子进程退出码区分；2 = 用法/内部错误）
+DEFAULT_ENV_KEY = "SECRET"       # --as-env 缺省变量名
+REDACT_MIN_SHARD = 8             # 注入值「分片兜底」脱敏的最小长度
 
 # 标签 → 敏感级（用于 list/policy 展示与默认拒读判断）
 SENSITIVITY = {
@@ -228,14 +238,28 @@ def pick_token(args) -> str:
 # 授权判定（唯一的策略入口；list 与未来的 run 共用）
 # ----------------------------------------------------------------------------
 
+def name_match(pat: str, name: str) -> bool:
+    """条目名匹配：**只把 `*`/`?` 当通配**，其余字符（含 `[]`）一律按字面。
+
+    不能用 fnmatch：条目名形如 `[REDACTED:llm-key:xxxx]`，fnmatch 会把 `[...]`
+    当字符类解析，导致 `--require-approval "[REDACTED:...]"` 这类模式永远匹配不上。
+    """
+    if not pat:
+        return False
+    if not any(c in pat for c in "*?"):
+        return pat == name
+    rx = "".join(".*" if c == "*" else "." if c == "?" else re.escape(c) for c in pat)
+    return re.fullmatch(rx, name) is not None
+
+
 def judge(policy: dict, agent_cfg: dict | None, principal: str, action: str, name: str,
-          entry: dict) -> tuple[bool, str]:
+          entry: dict, unlock: dict | None = None) -> tuple[bool, str]:
     label = entry["label"]
     # 全局硬拒（PII/非凭据）在任何角色下都不放行
     if label in (policy.get("deny_labels") or []):
         return False, "命中全局 deny_labels（%s）" % label
     for pat in (policy.get("deny_names") or []):
-        if fnmatch.fnmatch(name, pat):
+        if name_match(pat, name):
             return False, "命中全局 deny_names（%s）" % pat
 
     if principal == "anonymous":
@@ -249,7 +273,7 @@ def judge(policy: dict, agent_cfg: dict | None, principal: str, action: str, nam
     if cfg.get("revoked_at") or cfg.get("enabled") is False:
         return False, "agent 已吊销/停用"
     for pat in (cfg.get("deny_names") or []):
-        if fnmatch.fnmatch(name, pat):
+        if name_match(pat, name):
             return False, "命中该 agent 的 deny_names（%s）" % pat
     for lb in (cfg.get("deny_labels") or []):
         if lb == label:
@@ -262,8 +286,10 @@ def judge(policy: dict, agent_cfg: dict | None, principal: str, action: str, nam
         if policy.get("require_credential", True) and not entry["credential"]:
             return False, "非凭据条目（credential=false）不得 run"
         for pat in (cfg.get("require_approval") or []):
-            if fnmatch.fnmatch(name, pat):
-                return False, "该条目需本机 unlock 窗口（P1）"
+            if name_match(pat, name):
+                if unlock and scope_allows(unlock.get("scope") or [], name):
+                    continue        # 窗口内且在 scope 内：免审批（上方标签/拒读/限额仍生效）
+                return False, "该条目需本机 unlock 窗口（agent_secret.py unlock --ttl 600 --yes）"
     return True, "allow"
 
 
@@ -272,6 +298,8 @@ def judge(policy: dict, agent_cfg: dict | None, principal: str, action: str, nam
 # ----------------------------------------------------------------------------
 
 def audit_append(root: str, rec: dict) -> None:
+    rec = dict(rec)
+    rec.setdefault("ts_epoch", int(dt.datetime.now().timestamp()))   # 供限额按时间窗统计
     p = audit_path(root)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     with open(p, "a", encoding="utf-8") as fh:
@@ -296,6 +324,121 @@ def audit_tail(root: str, n: int) -> int:
                  r.get("result", "?"), r.get("entry", "") or "-",
                  ("[" + r.get("reason", "") + "]") if r.get("reason") else ""))
     return 0
+
+
+# ----------------------------------------------------------------------------
+# 解锁窗口（D2：默认 10 分钟，用户本机开启）
+# ----------------------------------------------------------------------------
+
+def state_dir(root: str) -> str:
+    return os.path.join(root, "state")
+
+
+def unlock_path(root: str) -> str:
+    return os.path.join(state_dir(root), UNLOCK_NAME)
+
+
+def read_unlock(root: str) -> dict:
+    p = unlock_path(root)
+    if not os.path.exists(p):
+        return {}
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return json.load(fh) or {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def window_active(root: str) -> dict | None:
+    """窗口生效时返回状态字典（含 scope），否则 None。"""
+    st = read_unlock(root)
+    exp = st.get("expires_at_epoch")
+    if exp and float(exp) > dt.datetime.now().timestamp():
+        return st
+    return None
+
+
+def write_unlock(root: str, ttl: int, scope: list, by: str, locked: bool = False) -> dict:
+    now = dt.datetime.now().timestamp()
+    end = now if locked else now + ttl
+
+    def _iso(ts: float) -> str:
+        return dt.datetime.fromtimestamp(ts).astimezone().isoformat(timespec="seconds")
+
+    st = {
+        "created_at": _iso(now),
+        "expires_at": _iso(end),
+        "expires_at_epoch": end,
+        "ttl_sec": ttl,
+        "scope": scope,
+        "by": by,
+        "locked_at": _iso(now) if locked else None,
+    }
+    _write_private(unlock_path(root), json.dumps(st, ensure_ascii=False, indent=2) + "\n")
+    return st
+
+
+def scope_allows(scope: list, name: str) -> bool:
+    scope = scope or []
+    return "*" in scope or any(name_match(s, name) for s in scope)
+
+
+# ----------------------------------------------------------------------------
+# 限额 与 输出二次脱敏（值只在本进程内驻留，绝不回传模型）
+# ----------------------------------------------------------------------------
+
+def count_recent(root: str, principal: str, action: str, seconds: int = 3600) -> int:
+    """近 N 秒内该 principal 该动作的**成功**调用数（denied 不计）。"""
+    p = audit_path(root)
+    if not os.path.exists(p):
+        return 0
+    cutoff = dt.datetime.now().timestamp() - seconds
+    n = 0
+    with open(p, encoding="utf-8") as fh:
+        for ln in fh:
+            try:
+                r = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if r.get("principal") != principal or r.get("action") != action:
+                continue
+            if r.get("result") not in ("ok", "redacted_output"):
+                continue
+            if float(r.get("ts_epoch") or 0) >= cutoff:
+                n += 1
+    return n
+
+
+def load_values(root: str) -> dict:
+    """{真值: token} —— 仅供 run 注入与输出脱敏；永不打印。"""
+    with open(map_path(root), encoding="utf-8") as fh:
+        data = json.load(fh)
+    out = {}
+    for name, ent in (data.get("tokens") or {}).items():
+        v = ent.get("value")
+        if v:
+            out[v] = name
+    return out
+
+
+def redact_output(text: str, values: dict, injected: str) -> tuple[str, int]:
+    """把输出里出现的真值替换为 token；并对**本次注入值**做分片兜底。返回 (文本, 替换次数)。"""
+    n = 0
+    for v, tok in sorted(values.items(), key=lambda kv: -len(kv[0])):
+        if v and v in text:
+            n += text.count(v)
+            text = text.replace(v, tok)
+    if injected and len(injected) >= REDACT_MIN_SHARD:
+        for i in range(len(injected) - REDACT_MIN_SHARD + 1):
+            shard = injected[i:i + REDACT_MIN_SHARD]
+            if shard and shard in text:
+                n += text.count(shard)
+                text = text.replace(shard, "[REDACTED:shard]")
+    return text, n
+
+
+def cmd_hash(cmd: list) -> str:
+    return hashlib.sha256(" ".join(cmd).encode("utf-8")).hexdigest()[:16]
 
 
 # ----------------------------------------------------------------------------
@@ -412,12 +555,13 @@ def cmd_policy(root: str, args) -> int:
     policy = load_policy(root)
     entries = load_entries(root)
     principal, how, cfg = resolve_caller(root, pick_token(args))
+    unlock = window_active(root)
     targets = [args.name] if args.name else sorted(entries)
     for name in targets:
         if name not in entries:
             print("  %s → 不存在" % name)
             continue
-        ok, reason = judge(policy, cfg, principal, args.action, name, entries[name])
+        ok, reason = judge(policy, cfg, principal, args.action, name, entries[name], unlock)
         print("  %-34s %s %s → %-5s %s" % (name, args.action, principal,
                                            "allow" if ok else "deny", reason))
     return 0
@@ -430,6 +574,117 @@ def cmd_audit(root: str, args) -> int:
 # ----------------------------------------------------------------------------
 # 入口
 # ----------------------------------------------------------------------------
+
+def cmd_run(root: str, args) -> int:
+    """★把条目的值注入子进程 env 执行命令；值绝不回传模型（输出二次脱敏 + 审计不含值）。"""
+    policy = load_policy(root)
+    entries = load_entries(root)
+    principal, how, cfg = resolve_caller(root, pick_token(args))
+    name = args.name
+    cmd = list(args.cmd or [])
+    if cmd and cmd[0] == "--":
+        cmd = cmd[1:]
+    ch = cmd_hash(cmd)
+    if name not in entries:
+        print("无此条目：%s" % name, file=sys.stderr)
+        return 2
+
+    def _deny(reason: str) -> int:
+        print("[deny] %s —— %s" % (name, reason), file=sys.stderr)
+        audit_append(root, {"ts": _now(), "principal": principal, "channel": "cli",
+                            "action": "run", "entry": name, "result": "denied",
+                            "reason": reason, "ttl": 0, "cmd_hash": ch})
+        return EXIT_DENIED
+
+    unlock = window_active(root)
+    ok, reason = judge(policy, cfg, principal, "run", name, entries[name], unlock)
+    if not ok:
+        return _deny(reason)
+
+    limit = int((cfg or {}).get("max_calls_per_hour") or policy.get("max_calls_per_hour") or 0)
+    if limit > 0:
+        used = count_recent(root, principal, "run", 3600)
+        if used >= limit:
+            return _deny("超过 max_calls_per_hour=%d（近 1 小时已成功 %d 次）" % (limit, used))
+
+    if not cmd:
+        print("run 需要在 `--` 之后给出命令，例如：\n"
+              "  agent_secret.py run --name <条目> --as-env API_KEY -- <命令...>", file=sys.stderr)
+        return 2
+
+    value = _resolve_value(root, name)
+    key = args.as_env or DEFAULT_ENV_KEY
+    env = dict(os.environ)
+    env[key] = value
+    tmpfile = os.path.abspath(args.as_file) if args.as_file else None
+    if tmpfile:
+        _write_private(tmpfile, value)
+    try:
+        proc = subprocess.run(cmd, env=env, capture_output=True)
+    except (FileNotFoundError, OSError) as e:
+        print("命令无法执行：%s" % e, file=sys.stderr)
+        audit_append(root, {"ts": _now(), "principal": principal, "channel": "cli",
+                            "action": "run", "entry": name, "result": "error",
+                            "reason": type(e).__name__, "ttl": 0, "cmd_hash": ch})
+        return 2
+    finally:
+        if tmpfile:                      # 自建临时件（含密）：先清零再删，避免残留
+            try:
+                size = os.path.getsize(tmpfile)
+                with open(tmpfile, "r+b") as fh:
+                    fh.write(b"\0" * size)
+                os.remove(tmpfile)
+            except OSError:
+                pass
+
+    values = load_values(root)
+    out, n_out = redact_output(proc.stdout.decode("utf-8", "replace"), values, value)
+    err, n_err = redact_output(proc.stderr.decode("utf-8", "replace"), values, value)
+    if out:
+        sys.stdout.write(out)
+    if err:
+        sys.stderr.write(err)
+    n = n_out + n_err
+    audit_append(root, {"ts": _now(), "principal": principal, "channel": "cli",
+                        "action": "run", "entry": name,
+                        "result": "redacted_output" if n else "ok",
+                        "reason": ("输出二次脱敏 %d 处" % n) if n else "",
+                        "ttl": int((unlock or {}).get("ttl_sec") or 0), "cmd_hash": ch,
+                        "exit": proc.returncode})
+    if n:
+        print("\n[已拦截] 子进程输出中发现 %d 处密钥真值，已替换为 token（防借输出外泄）。" % n,
+              file=sys.stderr)
+    return proc.returncode
+
+
+def cmd_unlock(root: str, args) -> int:
+    """★用户本机：开启解锁窗口（默认 600s = 10 分钟）。窗口只免 require_approval，不放宽范围。"""
+    if not args.yes:
+        print("★ 这是本机人工动作：请显式加 --yes 确认（Agent 不应自行解锁）。", file=sys.stderr)
+        return 2
+    ttl = max(1, min(int(args.ttl or 600), MAX_UNLOCK_TTL))
+    scope = [s.strip() for s in (args.scope or "*").split(",") if s.strip()] or ["*"]
+    by = args.by or os.environ.get("USERNAME") or os.environ.get("USER") or "user"
+    st = write_unlock(root, ttl, scope, by)
+    print("已开启解锁窗口：%s（ttl=%ds，scope=%s，by=%s）" % (st["expires_at"], ttl, scope, by))
+    print("窗口内仅免 require_approval；allow_tags / deny_names / 限额 / 审计全部照旧。")
+    print("到期自动失效；提前关闭：agent_secret.py lock")
+    audit_append(root, {"ts": _now(), "principal": "user:" + by, "channel": "cli",
+                        "action": "unlock", "entry": ",".join(scope), "result": "ok",
+                        "reason": "ttl=%ds" % ttl, "ttl": ttl, "cmd_hash": ""})
+    return 0
+
+
+def cmd_lock(root: str, args) -> int:
+    """★用户本机：提前关闭解锁窗口。"""
+    by = os.environ.get("USERNAME") or os.environ.get("USER") or "user"
+    st = write_unlock(root, 0, [], by, locked=True)
+    print("已关闭解锁窗口（locked_at=%s）；require_approval 条目重新需要 unlock。" % st["locked_at"])
+    audit_append(root, {"ts": _now(), "principal": "user:" + by, "channel": "cli",
+                        "action": "lock", "entry": "", "result": "ok", "reason": "",
+                        "ttl": 0, "cmd_hash": ""})
+    return 0
+
 
 def _add_common(p: argparse.ArgumentParser) -> None:
     """公共参数：顶层与每个子命令都挂一份（SUPPRESS 默认值，避免两种写法互相覆盖）。"""
@@ -474,6 +729,26 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--action", choices=["list", "run"], default="run")
     p.add_argument("--name", help="条目名；缺省列全部")
     p.set_defaults(func=cmd_policy)
+
+    p = sub.add_parser("run", parents=[common],
+                       help="★把值注入子进程 env 执行命令（值绝不回传）")
+    p.add_argument("--name", required=True, help="条目名（[REDACTED:label:hex]）")
+    p.add_argument("--as-env", default=DEFAULT_ENV_KEY,
+                   help="注入的环境变量名（默认 %s）" % DEFAULT_ENV_KEY)
+    p.add_argument("--as-file", help="改为写入该临时文件（600；子进程退出后清零并删除）")
+    p.add_argument("cmd", nargs=argparse.REMAINDER, help="`--` 之后要执行的命令")
+    p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser("unlock", parents=[common], help="★用户本机：开启解锁窗口（默认 600s）")
+    p.add_argument("--ttl", type=int, default=600, help="窗口秒数（默认 600=10 分钟；上限 %d）"
+                   % MAX_UNLOCK_TTL)
+    p.add_argument("--scope", help="放行的 require_approval 条目 glob（逗号分隔；默认 *）")
+    p.add_argument("--by", help="操作者（审计用；默认取系统用户名）")
+    p.add_argument("--yes", action="store_true", help="确认这是本机人工动作")
+    p.set_defaults(func=cmd_unlock)
+
+    p = sub.add_parser("lock", parents=[common], help="★用户本机：提前关闭解锁窗口")
+    p.set_defaults(func=cmd_lock)
 
     p = sub.add_parser("audit", parents=[common], help="查看访问审计")
     p.add_argument("--tail", type=int, default=50)

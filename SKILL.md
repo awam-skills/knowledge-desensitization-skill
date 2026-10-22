@@ -214,12 +214,18 @@ python scripts/agent_secret.py enroll --id <源id> --agent claude-code --tags ll
 #   PowerShell: setx AGENT_SECRET_TOKEN "agt_..."     bash: export AGENT_SECRET_TOKEN=agt_...
 python scripts/agent_secret.py whoami --id <源id>          # 我是谁 / 能看什么
 python scripts/agent_secret.py list   --id <源id>          # 只列元数据（名/标签/凭据位/敏感级），永不含值
+# ★用密钥：把值注入子进程 env（值绝不回传模型；输出二次脱敏；拒绝=13）
+python scripts/agent_secret.py run --id <源id> --name "[REDACTED:llm-key:xxxx]" \
+    --as-env OPENAI_API_KEY -- <命令...>
+# ★用户本机：10 分钟解锁窗口（只免 require_approval）
+python scripts/agent_secret.py unlock --id <源id> --ttl 600 --yes   # lock 可提前关
 python scripts/agent_secret.py audit  --id <源id> --tail 50
 ```
 
 - 策略 `<km>/config/agent-access.json`（`default: deny`）+ 每 caller `<km>/config/agents/<agent>.json`（只存 token 的 `sha256`）；
-  审计 `<km>/reports/secret-access.jsonl`（不含值）。判定与实现细节见 `references/agent-access.md`。
-- P1（未实现）：`run`（注入 env + 输出二次脱敏）、`unlock --ttl 600`（本机 10 分钟窗口）、MCP 薄壳。
+  审计 `<km>/reports/secret-access.jsonl`（不含值）；解锁窗口 `<km>/state/unlock.json`。细节见 `references/agent-access.md`。
+- 限额 `max_calls_per_hour` 生效；`run` 的输出会用 `map.json` 全部真值二次脱敏（防借输出外泄）。
+- P2（未实现）：MCP 薄壳（`secret_list` / `secret_run` / `secret_audit`）。
 
 ## 安全红线（务必遵守）
 
