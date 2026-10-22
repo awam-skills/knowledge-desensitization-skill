@@ -202,10 +202,14 @@ python scripts/recover.py --data-root <root> --file <相对路径> --apply  # �
 > **salt / map 丢失 = 工作副本里的 `[REDACTED]` 永不可逆。** 请把 `--dest` 指向私密离线介质。
 > 分层保存与恢复流程见 `references/recovery.md`（密文与密钥分道；副本可上云，钥匙必须离线）。
 
-## 供 Agent 使用密钥（broker，P0）
+## 供 Agent 使用密钥（broker：**命令行为主流程，MCP 可选**）
 
 Agent 要的是「**用**密钥」，不是「读密钥」。本技能因此提供 `scripts/agent_secret.py`：
-**永不提供读值接口**，只把值（P1 起）注入子进程环境变量；身份 = 持有 caller token。
+**永不提供读值接口**，只把值注入子进程环境变量；身份 = 持有 caller token。
+
+> **主流程 = 命令行**：`whoami` → `list` → `run`。**不强制、也不要求配置 MCP**；
+> MCP 是**可选薄壳**（仅在客户端是 MCP 原生、且不想给 Agent shell 权限时才用）。
+> CVO 2026-10-22 定：Agent **不需要「持有值」，能用即可**；优先命令行完成流程。
 
 ```bash
 # ★用户本机（一次）：签发 token（只显示一次，交给 Agent 存进它自己的密钥库/环境变量）
@@ -225,9 +229,9 @@ python scripts/agent_secret.py audit  --id <源id> --tail 50
 - 策略 `<km>/config/agent-access.json`（`default: deny`）+ 每 caller `<km>/config/agents/<agent>.json`（只存 token 的 `sha256`）；
   审计 `<km>/reports/secret-access.jsonl`（不含值）；解锁窗口 `<km>/state/unlock.json`。细节见 `references/agent-access.md`。
 - 限额 `max_calls_per_hour` 生效；`run` 的输出会用 `map.json` 全部真值二次脱敏（防借输出外泄）。
-- P2（已实现）：MCP 薄壳 `scripts/agent_secret_mcp.py`（stdio/JSON-RPC）；配置由技能生成
-  `python scripts/agent_secret.py mcp --id <源id>`——**技能是唯一入口**，用户/Agent 无需自己管 MCP。
-  只暴露 `secret_list` / `secret_run` / `secret_audit`（**没有 `secret_get`**，值永不出现在响应里）。
+- **MCP（P2，可选、非主流程、不强制）**：`scripts/agent_secret_mcp.py`（stdio/JSON-RPC），只暴露
+  `secret_list` / `secret_run` / `secret_audit`（**没有 `secret_get`**，值永不出现在响应里）。
+  需要时才配，配置由技能生成：`python scripts/agent_secret.py mcp --id <源id>`；**不配也全功能可用**。
 
 ## 安全红线（务必遵守）
 

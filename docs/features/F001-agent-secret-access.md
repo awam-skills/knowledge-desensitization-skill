@@ -105,6 +105,8 @@ secret_list / secret_run / secret_audit        # 注意：不注册 secret_get
 - **技能知道怎么调自己**：`SKILL.md` 写明调用方式；`mcp --print-config` 输出 `.mcp.json` 片段。
 - **技能作为统一入口**：Agent 只加载技能即可；启用 MCP 由宿主/用户决定，**未启用时 CLI 全功能可用**。
   Agent 无需管理 MCP。
+- **主流程优先命令行（CVO 2026-10-22 定）**：**不强制、也不要求设置 MCP**；MCP 仅在「MCP 原生客户端 + 不想给 Agent shell 权限」时启用。
+  Agent **不需要「持有值」，能用即可**。
 
 ## Acceptance Criteria
 
@@ -142,7 +144,7 @@ secret_list / secret_run / secret_audit        # 注意：不注册 secret_get
 | D1 | caller 身份 | **两段式**：caller token 定主体（可验证）、通道仅作审计提示；识别链 `--caller-token` → `AGENT_SECRET_TOKEN` → stdin → `anonymous`；未注册只读元数据 | [ADR-001 · D1](../decisions/ADR-001-agent-secret-access.md) |
 | D2 | 解锁窗口 | **要，10 分钟（600s）**；用户本机 `unlock`，窗口内免审批但不放宽范围；到期自动失效 | [ADR-001 · D2](../decisions/ADR-001-agent-secret-access.md) |
 | D3 | 后端 | **只支持 `map.json`**，保留 `resolve_value()` 抽象位 | [ADR-001 · D3](../decisions/ADR-001-agent-secret-access.md) |
-| D4 | MCP 归属 | **放本技能**（`agent_secret_mcp.py`），技能作为统一入口，Agent 无需管理 MCP；未启用 MCP 时 CLI 仍全功能 | [ADR-001 · D4](../decisions/ADR-001-agent-secret-access.md) |
+| D4 | MCP 归属 | **放本技能**（`agent_secret_mcp.py`）；技能为统一入口，Agent 无需管理 MCP；**MCP 可选、非主流程——不强制设置，优先命令行**；未启用时 CLI 全功能 | [ADR-001 · D4](../decisions/ADR-001-agent-secret-access.md) |
 
 ## 里程碑
 

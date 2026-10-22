@@ -250,8 +250,8 @@ python scripts/agent_secret_mcp.py --id <源id>              # stdio MCP 服务�
   （只存 token 的 `sha256` + 末 4 位提示）、`<km>/reports/secret-access.jsonl`（审计，不含值）。
 - P1（已实现）：`run --as-env KEY -- <cmd>`（注入 env + 输出二次脱敏 + 退出码透传 + `max_calls_per_hour` 限额）、
   `unlock --ttl 600 --yes` / `lock`（本机 10 分钟窗口，落 `<km>/state/unlock.json`）；模式只把 `*`/`?` 当通配。
-- P2（已实现）：MCP 薄壳 `agent_secret_mcp.py`（stdio/JSON-RPC），只暴露 `secret_list` / `secret_run` / `secret_audit`；
-  与 CLI 共用 `run_secret()` 内核不分叉；配置用 `agent_secret.py mcp --id <源id>` 生成。
+- P2（已实现，**可选、非主流程**）：MCP 薄壳 `agent_secret_mcp.py`（stdio/JSON-RPC），只暴露 `secret_list` / `secret_run` / `secret_audit`；
+  与 CLI 共用 `run_secret()` 内核不分叉；**主流程用上面的命令行，不要求配置 MCP**，需要时才用 `agent_secret.py mcp --id <源id>` 生成配置。
 - 详见 `references/agent-access.md`。
 
 ## pre-commit —— 提交前护栏

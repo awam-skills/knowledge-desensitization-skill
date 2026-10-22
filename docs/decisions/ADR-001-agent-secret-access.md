@@ -97,7 +97,12 @@ python scripts/agent_secret.py lock                  # 提前关闭
 
 ---
 
-## D4 · MCP：**放本技能，技能是唯一入口，Agent 无需管理 MCP**
+## D4 · MCP：**放本技能，技能是唯一入口，Agent 无需管理 MCP；MCP 可选，主流程优先命令行**
+
+> **CVO 2026-10-22 22:31 裁决**：Agent **不需要「持有值」，能用即可**；
+> **MCP 是可选件——主流程不强制、不要求设置 MCP，优先用命令行方式完成流程**。
+> 据此：技能文档与流程一律以 `agent_secret.py`（CLI）为第一入口；MCP 只在「客户端是 MCP 原生
+> 且不想给 Agent shell 权限」时启用；不启用时 CLI 全功能可用（两者共用内核，行为一致）。
 
 - MCP server 实现**在本技能仓内**（`scripts/agent_secret_mcp.py`），与 CLI **共用同一策略/审计内核**（一份授权逻辑，避免两套漂移）。
 - 暴露 MCP tools：`secret_list` / `secret_run` / `secret_audit`（只读）。**不暴露 `secret_get`**。
