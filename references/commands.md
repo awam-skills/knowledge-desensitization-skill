@@ -122,7 +122,8 @@ pwsh -File scripts/bitwarden-import.ps1 [-Id <源id>] [-SecretDir <秘密材料�
 > 解析优先级：`-SecretDir` > `-DataRoot`（别名）> `$KM_SECRET_DIR` > `<秘密材料根>/<id>`（`-Id`
 > 或 `sources/*.yaml` 唯一源；秘密材料根取 `sources/<id>.yaml` → `settings.yaml` → 默认 `<技能目录>/.km`）
 > \> 扫描 `<秘密材料根>/*` 中含 `vault\map\` 的目录。
-> 另：`backfill.py --data-root` 同样指**秘密材料目录**（本项目中该参数名二义，勿按「数据根」理解）。
+> 另：`backfill.py` / `agent_secret.py` 的 `--data-root` 同样指**秘密材料目录**（本项目中该参数名二义，勿按「数据根」理解）；
+> `agent_secret.py` 另支持 `--id <源id>`（与 `--data-root` 互斥，取其一）。
 
 流程：找最新 `bw-import-*.json` → `bw status` → `-DryRun` 预览 → 复用已解锁会话（否则 `bw unlock --raw`）
 → `bw sync` → `bw import` → `bw list items --search "notes/"` 写 `vault/map/bw-items.json`（>0 才写）
@@ -240,7 +241,7 @@ python scripts/agent_secret.py unlock  --id <源id> --ttl 600 --yes [--scope "gl
 python scripts/agent_secret.py lock    --id <源id>
 
 # ★MCP（P2）：技能生成客户端配置（唯一入口，用户无需自己管 MCP）
-python scripts/agent_secret.py mcp     --id <源id>          # 打印可粘贴的 .mcp.json 片段
+python scripts/agent_secret.py mcp     --id <源id> [--print-config]   # 打印可粘贴的 .mcp.json 片段（两写法等价）
 python scripts/agent_secret_mcp.py --id <源id>              # stdio MCP 服务本体（由客户端拉起）
 ```
 

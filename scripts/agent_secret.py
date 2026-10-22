@@ -815,6 +815,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("mcp", parents=[common], help="★输出 MCP 客户端配置（P2）")
     p.add_argument("--name", help="MCP server 键名（默认 agent-secret）")
     p.add_argument("--interpreter", help="python 解释器路径（默认当前解释器）")
+    p.add_argument("--print-config", action="store_true",
+                   help="显式请求打印配置（本命令默认即打印；此开关仅为兼容文档写法，二者等价）")
     p.set_defaults(func=cmd_mcp)
 
     p = sub.add_parser("audit", parents=[common], help="查看访问审计")

@@ -110,15 +110,23 @@ secret_list / secret_run / secret_audit        # 注意：不注册 secret_get
 
 ## Acceptance Criteria
 
-- [ ] **AC-1**：`list` 输出仅含条目名/标签/敏感级，任何路径下都不输出值（含 `--debug`）。
-- [ ] **AC-2**：`run` 注入的值不出现在 stdout/stderr/参数回显/日志中；退出码透传。
-- [ ] **AC-3**：`run` 输出若含刚注入的值（或其≥8字符分片）→ 被替换为 token，并记 `redacted_output` 审计。
-- [ ] **AC-4**：策略 `default: deny`；未在 `allow_tags` 内 / 命中 `deny_names` / 窗口外命中 `require_approval` 的请求一律拒绝，
-  且拒绝原因写入审计。
-- [ ] **AC-5**：租约/窗口到期后失效（`lease` 临时件被删、`unlock` 到期后 `require_approval` 重新拒绝）。
-- [ ] **AC-6**：每次调用有一条审计；审计不含值；可 `audit --tail` 查看。
-- [ ] **AC-7**：caller 身份按 token 校验（常量时间）、未注册降级 `anonymous`、`anonymous` 无法 `run`；token 仅签发时显示一次、可吊销。
-- [ ] **AC-8**：`unlock --ttl 600` 窗口为 **10 分钟**；窗口只免 `require_approval`，不放宽 `allow_tags`/`deny_names`/限额。
+- [x] **AC-1**：`list` 输出仅含条目名/标签/敏感级，任何路径下都不输出值（含 `--debug`）。
+      验证 ✅ 真实库对 272 条真值反查命中 **0**；`--json` 视图 0；`value` 全仓仅 `_resolve_value()`（run 专用）1 处引用。
+- [x] **AC-2**：`run` 注入的值不出现在 stdout/stderr/参数回显/日志中；退出码透传。
+      验证 ✅ 子进程打印明文 → 输出被替换为 token；子进程 `exit 7` → 本进程 rc=7。
+- [x] **AC-3**：`run` 输出若含刚注入的值（或其≥8字符分片）→ 被替换为 token，并记 `redacted_output` 审计。
+      验证 ✅ 审计出现 `redacted_output`（`输出二次脱敏 N 处`）；MCP 通道同样成立。
+- [x] **AC-4**：策略 `default: deny`；未在 `allow_tags` 内 / 命中 `deny_names` / 窗口外命中 `require_approval` 的请求一律拒绝，
+      且拒绝原因写入审计。
+      验证 ✅ 匿名 run=deny13、`bank-card` 命中全局 `deny_labels`=deny13、窗口外 `require_approval`=deny13，三者均落审计。
+- [x] **AC-5**：临时件/窗口到期后失效（`run --as-file` 的 600 临时件在子进程退出后**先清零再删**；`unlock` 到期后 `require_approval` 重新拒绝）。
+      验证 ✅ `--as-file` 事后文件不存在；`unlock --ttl 1` 2 秒后判定由 allow 转 deny。
+- [x] **AC-6**：每次调用有一条审计；审计不含值；可 `audit --tail` 查看。
+      验证 ✅ `list`/`run`/`unlock`/`lock`/`audit` 均落行；审计文件内明文命中 0。
+- [x] **AC-7**：caller 身份按 token 校验（常量时间）、未注册降级 `anonymous`、`anonymous` 无法 `run`；token 仅签发时显示一次、可吊销。
+      验证 ✅ `hmac.compare_digest`；错误 token→anonymous；`--revoke` 后旧 token 立即变 anonymous（`依据 token 已吊销`）。
+- [x] **AC-8**：`unlock --ttl 600` 窗口为 **10 分钟**；窗口只免 `require_approval`，不放宽 `allow_tags`/`deny_names`/限额。
+      验证 ✅ 窗口外 deny13 / 窗口内 allow0 / `lock` 后 deny13 / 缺 `--yes` 拒 rc2；`allow_tags` 与硬拒标签在窗口内仍生效。
 
 ## Dependencies
 
