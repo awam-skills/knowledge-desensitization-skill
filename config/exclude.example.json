@@ -10,6 +10,8 @@
     ".office-claw/**",
     ".office-claw",
     "docs/**",
-    "docs"
+    "docs",
+    ".git/**",
+    ".git"
   ]
 }

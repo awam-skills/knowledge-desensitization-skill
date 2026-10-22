@@ -31,7 +31,13 @@
     "  里面全是正则/代码片段，被 L2/L3 大量误命中。修复：整目录排除（config/exclude.json），",
     "  sanitize/scan/probe 统一读取该配置。",
     "【策略·2026-10-18】用户决策：宁可「过度脱敏」，配套 scripts/restore.py 把误报按需填回原文，",
-    "  不在召回上妥协。误报治理手段优先级：restore.py（按 token 填回）＞ whitelist.json（按指纹跳过）。"
+    "  不在召回上妥协。误报治理手段优先级：restore.py（按 token 填回）＞ whitelist.json（按指纹跳过）。",
+    "【漏报根因3·2026-10-22】邮件凭据两类形态漏网（pages/env-邮箱.md 实测）：",
+    "  (a) 「POP3/SMTP服务    <16位授权码>」——服务标注不在 kw_* 关键词表内，整类无人认领；",
+    "  (b) 「授权码 <16位纯字母>」（QQ 邮箱）——kw_bare 要求值同时含字母与数字，纯字母值漏网。",
+    "  修复：新增 mail_auth_code_smtp / mail_auth_code_bare 两条厂商格式规则（插在 conn_string_password 之后）。",
+    "  注意：新规则的捕获 span 刻意与 kw_assignment（需分隔符）/kw_bare（需数字）不重叠——",
+    "  否则会改变旧 token（token 只取决于 规则名+原文），使 bw-items.json 映射失效、backfill 出现未映射。"
   ],
   "rules": [
     {
@@ -129,6 +135,30 @@
       "replace_group": 2,
       "validator": "none",
       "extract_hint": "连接串中的密码（保留 user@ 结构）"
+    },
+    {
+      "name": "mail_auth_code_smtp",
+      "label": "pw",
+      "enabled": true,
+      "credential": true,
+      "mode": "regex",
+      "pattern": "(?:(?:POP3|IMAP)\\s*/\\s*SMTP(?:服务|服务器)?)\\s*[:：=＝]?\\s*([A-Za-z0-9]{16})(?![A-Za-z0-9])",
+      "flags": "",
+      "replace_group": 1,
+      "validator": "none",
+      "extract_hint": "邮件客户端授权码：POP3/SMTP（或 IMAP/SMTP）服务标注后的 16 位授权码。补 L2 漏报——「POP3/SMTP服务」不在 kw_* 关键词表内，此类值此前整体漏网（pages/env-邮箱.md 实测）。"
+    },
+    {
+      "name": "mail_auth_code_bare",
+      "label": "pw",
+      "enabled": true,
+      "credential": true,
+      "mode": "regex",
+      "pattern": "(?:客户端授权码|授权密码|独立密码|授权码)\\s+([A-Za-z]{16})(?![A-Za-z0-9])",
+      "flags": "",
+      "replace_group": 1,
+      "validator": "none",
+      "extract_hint": "邮件授权码（纯字母、空格分隔，典型如 QQ 邮箱 16 位小写授权码）。补 L2 漏报——kw_bare 要求值同时含字母与数字，纯字母授权码漏网；此处值限「纯字母 + 无分隔符」，与 kw_assignment（需分隔符）/kw_bare（需数字）的已匹配 span 不重叠，避免改变旧 token。"
     },
     {
       "name": "kw_assignment",
