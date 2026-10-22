@@ -32,6 +32,21 @@ python scripts/recover.py --data-root <数据根>/.km/<id> --apply --in-place  #
 `recover.py` 同时处理两种形态，默认写到**独立目录**（不覆盖工作副本——工作副本是对外分享物，
 不该被就地解密）；`--in-place` 才会改工作副本，之后该目录即含明文，**勿再分享**。
 
+### 单文件恢复（只取回某篇笔记）
+
+想单独拿回某个文件的原文，不必全量重建：加 `--file`（镜像相对路径，可重复；给目录则展开其下文件）。
+
+```bash
+# 只看能不能还原（不写盘）
+python scripts/recover.py --data-root <数据根>/.km/<id> --file pages/env-AI.md --verify [--source <真源>]
+# 真正写出（默认落 <km>/recovered/<name>/ 下的同名相对位置；也可 --out 指定目录）
+python scripts/recover.py --data-root <数据根>/.km/<id> --file pages/env-AI.md --apply --out <目标目录>
+```
+
+- 单文件恢复与全量恢复**共用同一套还原逻辑**（token 形态 + 引用形态），校验口径一致。
+- 文件不存在时直接报错并列名，退出码 2（不静默跳过）。
+- 同样**绝不打印原文**；输出只给计数与路径。
+
 ## 2. 恢复标准流程（新机器 / 灾难恢复）
 
 1. 重新配置源（真源路径可能已变）：

@@ -113,13 +113,14 @@ python scripts/materials.py --id <源id> --apply --verify
   默认只列出（`on_deleted=ask`），确认后 `keep` 或 `remove`（软移到 `<km>/superseded/`）。
 - **就地脱敏**：`sanitize.py --in-place` 直接覆写工作副本；`--note-dirs` / `--all-text`
   控制参与文件（默认 `journals,pages`；非 Logseq 源用 `--all-text`）。
-- **可逆**：`map.json` + salt 是原文真相源；`recover.py` 用「工作副本 + `map.json`」重建，
-  **不依赖 Bitwarden**。
+- **可逆**：`map.json` + salt 是原文真相源；`recover.py` 用「工作副本 + `map.json`」恢复，
+  **不依赖 Bitwarden**。两种模式：**全量恢复**（整库）与**单文件恢复**（`--file`）。
 
 ```bash
 # 可逆性校验（对真源逐字节比对，期望「不一致 0」）
 python scripts/recover.py --data-root <km> --verify --source <真源>
-python scripts/recover.py --data-root <km> --apply        # → recovered/<name>/
+python scripts/recover.py --data-root <km> --apply        # 全量 → recovered/<name>/
+python scripts/recover.py --data-root <km> --file <相对路径> --apply   # 单文件恢复
 ```
 
 **技能不代上传**：工作副本与材料的去向由**你**决定（技能只给建议），
@@ -171,12 +172,13 @@ python scripts/materials.py --id <id> --apply --verify
   `bw export --format encrypted_json --password "<口令>" --output bw-export.json`
   （加密导出，勿用明文 `--format json`），自行放入离线介质。
 
-**恢复靠 `map.json`，不靠 Bitwarden**：`recover.py` 用「工作副本 + map.json」重建原文，
-同时处理 `[REDACTED:...]`（token 形态）与「见保险库：xxx」（引用形态）：
+**恢复靠 `map.json`，不靠 Bitwarden**：`recover.py` 用「工作副本 + map.json」恢复原文，
+同时处理 `[REDACTED:...]`（token 形态）与「见保险库：xxx」（引用形态），两种模式：
 
 ```bash
 python scripts/recover.py --data-root <root> --verify [--source <源>]   # 只校验
-python scripts/recover.py --data-root <root> --apply                    # → <root>/recovered/<name>/
+python scripts/recover.py --data-root <root> --apply                    # 全量 → <root>/recovered/<name>/
+python scripts/recover.py --data-root <root> --file <相对路径> --apply  # 单文件恢复
 ```
 
 > **salt / map 丢失 = 工作副本里的 `[REDACTED]` 永不可逆。** 请把 `--dest` 指向私密离线介质。

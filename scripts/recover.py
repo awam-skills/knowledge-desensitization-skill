@@ -25,16 +25,26 @@
 目录无关
 - --data-root 定位 vault/ 与 workspace.json；--mirror 缺省读 workspace.json 的 mirror。
 
+两种恢复模式
+- **全量恢复**（默认）：整个工作副本 → 原文，重建出完整知识库。
+- **单文件恢复**：`--file <镜像相对路径>`（可重复；给目录则展开其下文件），
+  只还原指定文件，用于「某篇笔记要单独取回原文」。
+
 用法
+    # —— 全量恢复 ——
     # 1) 校验「备份 + 镜像」能否完整还原（不写盘；给了 --source 还会逐字节比对源）
     python scripts/recover.py --data-root <根> --verify
     python scripts/recover.py --data-root <根> --verify --source <源目录>
-
     # 2) 重建到独立目录
     python scripts/recover.py --data-root <根> --apply
-
     # 3) 就地还原镜像（谨慎：还原后镜像即含明文，勿再分享）
     python scripts/recover.py --data-root <根> --apply --in-place
+
+    # —— 单文件恢复 ——
+    python scripts/recover.py --data-root <根> --file pages/env-AI.md --verify
+    python scripts/recover.py --data-root <根> --file pages/env-AI.md --apply
+    python scripts/recover.py --data-root <根> --file journals/2024_01_01.md \
+        --file pages/账号-X.md --apply --out <目标目录>
 """
 from __future__ import annotations
 
@@ -128,12 +138,43 @@ def reconstruct(text: str, tokens: dict, name2tok: dict[str, str],
     return text
 
 
+def select_files(mirror: str, wanted: list[str]) -> tuple[list[str], list[str]]:
+    """挑出要处理的文件；wanted 为空 = 全量。
+
+    返回 (绝对路径列表, 未找到的相对路径列表)。给目录则展开其下的文件。
+    """
+    if not wanted:
+        return list(iter_files(mirror)), []
+    found: list[str] = []
+    missing: list[str] = []
+    seen: set[str] = set()
+    for w in wanted:
+        rel = os.path.normpath(w.strip().strip("/\\"))
+        p = os.path.join(mirror, rel)
+        if os.path.isdir(p):
+            for f in iter_files(p):
+                if f not in seen:
+                    seen.add(f)
+                    found.append(f)
+        elif os.path.isfile(p):
+            ap_ = os.path.abspath(p)
+            if ap_ not in seen:
+                seen.add(ap_)
+                found.append(ap_)
+        else:
+            missing.append(rel)
+    return found, missing
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     paths.add_root_arg(ap)
     ap.add_argument("--mirror", help="脱敏镜像根；缺省读 workspace.json 的 mirror")
     ap.add_argument("--source", help="只读源目录；用于逐字节校验（缺省读 workspace.json）")
     ap.add_argument("--out", help="重建输出目录；缺省 <data-root>/recovered/<name>")
+    ap.add_argument("--file", action="append", default=[], metavar="REL",
+                    help="单文件恢复：只还原该文件（镜像相对路径；可重复；给目录则展开其下文件）。"
+                         "不带则全量恢复")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--verify", action="store_true", help="只校验、不写盘（默认行为）")
     g.add_argument("--apply", action="store_true", help="写盘")
@@ -150,16 +191,27 @@ def main() -> int:
     ws_name = paths.load_workspace(root).get("name") or "notes"
     outdir = args.out or os.path.join(root, "recovered", ws_name)
 
+    files, missing = select_files(mirror, args.file)
+    if missing:
+        print("在镜像里找不到这些路径：", file=sys.stderr)
+        for r in missing:
+            print("  -", r, file=sys.stderr)
+        return 2
+    single = bool(args.file)
+
     tokens = load_tokens(root)
     name2tok = load_name_to_token(root)
 
     stats: collections.Counter = collections.Counter()
     rows: list[tuple[str, str, str]] = []   # (rel, new_text, original_text)
-    for p in iter_files(mirror):
-        text = read_text(p)
+    raw_copy: list[str] = []                # 按文本处理不了（二进制/非 utf-8）：原样拷回
+    for p in files:
+        text = read_text(p) if is_text_file(p) else None
         if text is None:
+            if single:
+                raw_copy.append(p)
             continue
-        if "REDACTED" not in text and paths.VAULT_REF not in text:
+        if not single and "REDACTED" not in text and paths.VAULT_REF not in text:
             continue
         new = reconstruct(text, tokens, name2tok, stats)
         rel = os.path.relpath(p, mirror)
@@ -216,41 +268,51 @@ def main() -> int:
         with open(dst, "w", encoding="utf-8", newline="") as fh:
             fh.write(content)
 
-    # 未命中占位符的其它文本文件（无命中）也一并拷到独立目录，形成完整树
     if not args.in_place:
-        copied = 0
-        changed_rels = {r for r, _, _ in rows}
-        for p in iter_files(mirror):
-            rel = os.path.relpath(p, mirror)
-            if rel in changed_rels:
-                continue
-            text = read_text(p)
-            if text is None:
-                continue
-            dst = os.path.join(outdir, rel)
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            with open(dst, "w", encoding="utf-8", newline="") as fh:
-                fh.write(text)
-            copied += 1
-        # 二进制文件（脱敏从不改动）：原样拷回，保证恢复树与镜像一致
-        copied_bin = 0
-        for dirpath, dirnames, filenames in os.walk(mirror):
-            dirnames[:] = [d for d in dirnames
-                           if d not in GENERATED_DIRS and d not in RUNTIME_DIRS]
-            for fn in filenames:
-                if fn in GENERATED_NAMES:
-                    continue
-                p = os.path.join(dirpath, fn)
-                if is_text_file(p):
-                    continue
+        if single:
+            # 单文件模式：请求里「按文本处理不了」的文件（二进制/非 utf-8）原样拷回
+            for p in raw_copy:
                 rel = os.path.relpath(p, mirror)
-                if rel in changed_rels:
-                    continue
                 dst = os.path.join(outdir, rel)
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copy2(p, dst)
-                copied_bin += 1
-        print(f"\n另复制未含占位符的文本文件 {copied} 个、二进制文件 {copied_bin} 个")
+            if raw_copy:
+                print(f"\n另原样复制 {len(raw_copy)} 个非文本文件")
+        else:
+            # 全量模式：未命中占位符的其它文件也一并拷到独立目录，形成完整树
+            copied = 0
+            changed_rels = {r for r, _, _ in rows}
+            for p in iter_files(mirror):
+                rel = os.path.relpath(p, mirror)
+                if rel in changed_rels:
+                    continue
+                text = read_text(p)
+                if text is None:
+                    continue
+                dst = os.path.join(outdir, rel)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                with open(dst, "w", encoding="utf-8", newline="") as fh:
+                    fh.write(text)
+                copied += 1
+            # 二进制文件（脱敏从不改动）：原样拷回，保证恢复树与镜像一致
+            copied_bin = 0
+            for dirpath, dirnames, filenames in os.walk(mirror):
+                dirnames[:] = [d for d in dirnames
+                               if d not in GENERATED_DIRS and d not in RUNTIME_DIRS]
+                for fn in filenames:
+                    if fn in GENERATED_NAMES:
+                        continue
+                    p = os.path.join(dirpath, fn)
+                    if is_text_file(p):
+                        continue
+                    rel = os.path.relpath(p, mirror)
+                    if rel in changed_rels:
+                        continue
+                    dst = os.path.join(outdir, rel)
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.copy2(p, dst)
+                    copied_bin += 1
+            print(f"\n另复制未含占位符的文本文件 {copied} 个、二进制文件 {copied_bin} 个")
 
     print("已重建 →", mirror if args.in_place else outdir)
     if args.in_place:

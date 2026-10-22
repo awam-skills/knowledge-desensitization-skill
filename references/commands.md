@@ -123,16 +123,23 @@ python scripts/backfill.py --data-root <km> [--mirror <dir>] [--apply]
 - `--apply` 才写盘 + 生成 `reports/backfill-<ts>.md`
 - 只动工作副本，不动真源
 
-## recover.py —— 用「工作副本 + map.json」重建原文
+## recover.py —— 用「工作副本 + map.json」恢复原文（全量 / 单文件）
 
 ```bash
+# 全量恢复（整库）
 python scripts/recover.py --data-root <km> --verify [--source <真源>]   # 只校验
 python scripts/recover.py --data-root <km> --apply                      # → <km>/recovered/<name>/
 python scripts/recover.py --data-root <km> --apply --in-place           # 就地还原工作副本（谨慎）
+
+# 单文件恢复（--file 可重复；给目录则展开其下文件）
+python scripts/recover.py --data-root <km> --file pages/env-AI.md --verify
+python scripts/recover.py --data-root <km> --file pages/env-AI.md --apply [--out <目录>]
 ```
 
+- **两种模式**：不传 `--file` = 全量恢复；传 `--file` = 只恢复指定文件（复合同一套还原逻辑）
 - 同时处理 `[REDACTED:...]`（token 形态，用 `map.json`）与「见保险库：xxx」（引用形态，用 `bw-items.json` + `map.json`）
 - `--verify` 只读；给了 `--source` 会与真源逐字节比对（期望「不一致 0」）
+- 输出默认落 `<km>/recovered/<name>/`（`--file` 时为该文件在树中的相对位置），**不覆盖工作副本**
 - **恢复不依赖 Bitwarden**：`map.json` 是原文真相源
 
 ## restore.py —— 按 token 填回原文
