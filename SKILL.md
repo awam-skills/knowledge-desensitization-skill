@@ -61,10 +61,22 @@ disable-model-invocation: true
 ```
 <KM_CONFIG_HOME>/
 ├── settings.yaml            # 全局默认：data_root / private_backup_dir / tmp_root（缺省=技能目录下 .tmp）/ defaults.*
-├── config/                  # ★全局配置：rules.json / whitelist.json / exclude.json / literals.json
-│                            #   作为所有源的默认；新源由 guide.py 自动继承；不进 Git
+├── config/                  # ★全局配置（配置分层的「默认层」）：rules.json / whitelist.json
+│                            #   / exclude.json / literals.json；**改完即生效**（不再是建源时的种子快照）；不进 Git
 └── sources/<id>.yaml        # 每个真源一份（可覆盖全局）
 ```
+
+**配置分层（生效顺序，后者覆盖前者）**——这是「改了配置却不生效」的根因所在：
+
+| 层 | 位置 | 角色 |
+|---|---|---|
+| 1 | `<技能目录>/config/rules.json` | 技能内置模板（基线，随技能升级） |
+| 2 | **`<KM_CONFIG_HOME>/config/*.json`** | **你的默认层：改完即生效** |
+| 3 | `<秘密材料根>/<id>/config/*.json` | 仅本源覆盖（通常留空/只放差异项） |
+
+- `rules.json` 按 `name`、`literals.json` 按 `id` 合并（**每源覆盖全局**）；`whitelist.json` / `exclude.json` 取**并集**。
+- ⚠️ `literal` 模式字面量要求长度 ≥ `min_len_guard`（默认 8），更短的条目**会被静默丢弃**。
+  用 `python scripts/literals_summary.py --data-root <km>` 自查：不生效的条目会显式标 `!! 不生效（被丢弃）`。
 
 **每个源的三件套**（`<id>` 由源路径推导，如 `logseq-main`）：
 

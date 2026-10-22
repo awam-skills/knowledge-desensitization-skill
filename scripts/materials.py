@@ -15,8 +15,10 @@
             vault/map/bw-items.json            （存在时）
             vault/map/restore-log.jsonl        （存在时）
             config/literals.json (+ .bak-*)    （存在时；含明文）
+            global/literals.json (+ .bak-*)    （全局配置层的字面量，存在时；含明文）
             bitwarden/<export>.json            （--bitwarden-export 时）
         meta/                ← 非密辅助：rules/whitelist/exclude
+            global/          ← 全局配置层的 rules/whitelist/exclude（配置分层的「默认层」）
         MANIFEST.json        ← 每个文件的 role/bytes/sha256
         RESTORE.md           ← 恢复步骤 + 备份建议
 
@@ -76,6 +78,30 @@ def collect_meta(root: str) -> list[str]:
     return [r for r in rels if os.path.isfile(os.path.join(root, r))]
 
 
+def collect_global(gcfg: str) -> list[tuple[str, str, str]]:
+    """全局配置目录（配置分层的「默认层」）→ (role, dest_rel, abs_src)。
+
+    配置分层后，生效规则 = 技能模板 → 全局 → 每源；因此备份必须**同时**收全局层，
+    否则换机恢复时规则/字面量会缺一层，还原不出等价环境。
+    含明文的 literals 仍落 materials/（密材）层，其余落 meta/。
+    """
+    out: list[tuple[str, str, str]] = []
+    if not gcfg or not os.path.isdir(gcfg):
+        return out
+    for name in ("rules.json", "whitelist.json", "exclude.json"):
+        p = os.path.join(gcfg, name)
+        if os.path.isfile(p):
+            out.append(("meta", os.path.join("meta", "global", name), p))
+    lp = os.path.join(gcfg, "literals.json")
+    if os.path.isfile(lp):
+        out.append(("materials",
+                    os.path.join("materials", "global", "literals.json"), lp))
+    for p in sorted(glob.glob(os.path.join(gcfg, "literals.json.bak-*"))):
+        out.append(("materials",
+                    os.path.join("materials", "global", os.path.basename(p)), p))
+    return out
+
+
 def backup_advice(cfg: dict, work: str, dest: str) -> str:
     """给出「工作副本 → 网盘/私有 Git；密材 → 私密离线」的建议文案（不含内容）。"""
     return (
@@ -129,6 +155,7 @@ def main() -> int:
         items.append(("materials", os.path.join("materials", rel), os.path.join(sec, rel)))
     for rel in collect_meta(sec):
         items.append(("meta", os.path.join("meta", rel), os.path.join(sec, rel)))
+    items += collect_global(km_config.global_config_dir())
     if args.bitwarden_export:
         p = os.path.abspath(args.bitwarden_export)
         if os.path.isfile(p):

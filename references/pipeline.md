@@ -7,7 +7,7 @@
 
 | 层 | 名称 | 规则来源 | 说明 |
 |---|---|---|---|
-| L0 | 字面量 | `config/literals.json` | 你亲自填的明文口令 / 片段；`match: literal`（整串）、`context`（关键词邻域）、`pair`（片段组合） |
+| L0 | 字面量 | **全局** `<KM_CONFIG_HOME>/config/literals.json` → **每源** `<秘密材料根>/<id>/config/literals.json`（按 `id` 合并，**每源覆盖全局**） | 你亲自填的明文口令 / 片段；`match: literal`（整串）、`context`（关键词邻域）、`pair`（片段组合）。⚠️ `literal` 模式要求长度 ≥ `min_len_guard`（默认 8），更短的条目**不会生效**（`literals_summary.py` 会标 `!! 不生效`） |
 | L1 | 厂商格式 | `config/rules.json` | `AKIA…`、`sk-…`、`ghp_…`、`xox…`、JWT、PEM 私钥块（`BEGIN…PRIVATE KEY`）等 |
 | L2 | 关键词邻域 | `config/rules.json` | `password = …`、`token: …` 等赋值语境 |
 | L3 | 熵兜底 | `config/rules.json`（`mode: entropy`） | 无格式但高熵的随机串：`len≥min_len` 且 `熵≥min_entropy` 且 `字符类≥min_classes`，且不在 `exclude_regex` |

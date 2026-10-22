@@ -17,8 +17,16 @@
     <secrets_root>/<id>/             秘密材料与运行态（永不外传）
                                      缺省 <技能目录>/.km/<id>（可用 --secrets-root 覆盖）
         .desensitization-root  workspace.json  .gitignore
-        config/{rules.json,whitelist.json,exclude.json,literals.example.json}
+        config/literals.example.json  # 示例（无明文）；真实字面量见下方「配置分层」
+        config/literals.json          # 可选：仅本源覆盖时才有（缺省不创建）
         vault/{keys,map,preview}  reports/
+
+配置分层（生效顺序，后者覆盖前者）
+    1. 技能模板 <技能目录>/config/rules.json
+    2. 全局 <KM_CONFIG_HOME>/config/{rules,whitelist,exclude,literals}.json  ← 默认层，改完即生效
+    3. 每源 <秘密材料根>/<id>/config/…                                      ← 仅本源覆盖
+    本脚本把技能模板**种子到全局目录**（缺则建）；**不再**往每源拷快照，
+    以免快照遮蔽以后对全局配置的修改（改了不生效）。
 
 用法
     python scripts/guide.py --source <真源目录> [--data-root <数据根>] \
@@ -192,23 +200,20 @@ def main() -> int:
     with open(gi, "w", encoding="utf-8") as fh:
         fh.write(GITIGNORE)
 
-    # 规则/白名单/排除：**全局配置优先**，其次技能模板
+    # 配置分层（B）：**全局配置目录 = 默认的家**；每源目录 = 覆盖。
+    # 不做「每源种子快照」，否则快照会遮蔽全局配置的后续修改（改了不生效）。
     generated = []
     gcfg = km_config.global_config_dir()
-    for dst_name, skill_name in (("rules.json", "rules.json"),
-                                 ("whitelist.json", "whitelist.example.json"),
-                                 ("exclude.json", "exclude.example.json")):
-        dst = os.path.join(sec, "config", dst_name)
-        if copy_if_absent(os.path.join(gcfg, dst_name), dst) \
-                or copy_if_absent(os.path.join(SKILL_CONFIG, skill_name), dst):
-            generated.append(dst_name)
-    # 示例字面量（无明文）来自技能模板
+    os.makedirs(gcfg, exist_ok=True)
+    for name, skill_name in (("rules.json", "rules.json"),
+                             ("whitelist.json", "whitelist.example.json"),
+                             ("exclude.json", "exclude.example.json")):
+        if copy_if_absent(os.path.join(SKILL_CONFIG, skill_name),
+                          os.path.join(gcfg, name)):
+            generated.append(f"全局/{name}")
+    # 每源只放「示例字面量」做参考（无明文）；真实字面量写在全局或本源覆盖目录
     copy_if_absent(os.path.join(SKILL_CONFIG, "literals.example.json"),
                    os.path.join(sec, "config", "literals.example.json"))
-    # 全局真实字面量（用户级；可能含明文）→ 本源 secret config
-    if copy_if_absent(os.path.join(gcfg, "literals.json"),
-                      os.path.join(sec, "config", "literals.json")):
-        generated.append("literals.json(全局)")
 
     km_config.save_source(sid, src_cfg)
 
@@ -230,8 +235,10 @@ def main() -> int:
           + ("" if tmp_root else "（缺省：技能目录下 .tmp，未入 Git）"))
     print(f"  生成配置   : {', '.join(generated) if generated else '（均已存在）'}")
     print(f"  源配置     : {cfg_path}")
-    print("  提示：真实字面量把 config/literals.example.json 复制为 "
-          "config/literals.json 后在本机填写（已被 .gitignore 忽略）。")
+    print("  提示：真实字面量写在「全局配置目录」的 config/literals.json"
+          "（所有源共用，改完即生效）；")
+    print(f"        只想本源覆盖时，写 {os.path.join(sec, 'config', 'literals.json')}"
+          "；示例见 config/literals.example.json。")
     print("\n下一步（一条命令跑完整流程）：")
     print(f'  python scripts/pipeline.py --id "{sid}" --apply')
     print("  或分步：sync.py → sanitize.py → materials.py")

@@ -369,21 +369,34 @@ def load_literals(path: str) -> list[Rule]:
 # 整文件/整目录排除（config/exclude.json）
 # ----------------------------------------------------------------------------
 
-def load_path_excludes(path: str) -> list[str]:
+def load_path_excludes(path: str, layered: bool = True) -> list[str]:
     """加载「整文件/整目录排除」的路径 glob 列表。
 
-    config/exclude.json → {"paths": ["assets/**", ".agent_history/**", ...]}。
-    用于把非笔记内容（图片目录、Agent 运行时、纯代码笔记）整体排除，
-    比逐条还原省事。
+    layered=True（默认）时**叠加全局配置** config/exclude.json（并集、去重）；
+    即「全局为默认、每源再补充」，两块合起来才是生效的排除集。
     """
-    if not os.path.exists(path):
-        return []
-    try:
-        with open(path, encoding="utf-8") as fh:
-            cfg = json.load(fh)
-    except (OSError, json.JSONDecodeError):
-        return []
-    return [p for p in cfg.get("paths", []) if p]
+    out: list[str] = []
+    g = global_config_dir() if layered else None
+    if g:
+        p = os.path.join(g, "exclude.json")
+        try:
+            with open(p, encoding="utf-8") as fh:
+                out += [x for x in json.load(fh).get("paths", []) if x]
+        except (OSError, json.JSONDecodeError):
+            pass
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                out += [x for x in json.load(fh).get("paths", []) if x]
+        except (OSError, json.JSONDecodeError):
+            pass
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for p in out:
+        if p and p not in seen:
+            seen.add(p)
+            uniq.append(p)
+    return uniq
 
 
 def path_excluded(rel: str, patterns: list[str]) -> bool:
@@ -422,6 +435,65 @@ def make_token(salt: bytes, rule: Rule, value: str) -> str:
 
 
 # ----------------------------------------------------------------------------
+# 配置分层：全局配置目录（用户级）为默认；每源 <秘密材料根>/<id>/config/ 为覆盖
+#   - rules.json / literals.json：按 name / id 合并，**后者覆盖前者**（每源胜全局）
+#   - whitelist.json / exclude.json：取**并集**（都是「越排除越多」的加法语义）
+# 这样用户级 <KM_CONFIG_HOME>/config/*.json 的修改**实时生效**，不再是建源时的一次性种子。
+# ----------------------------------------------------------------------------
+
+def global_config_dir() -> str | None:
+    """用户级全局配置目录；懒加载 km_config 以避免循环导入。不可用时返回 None。"""
+    try:
+        import km_config  # noqa: PLC0415
+        return km_config.global_config_dir()
+    except Exception:
+        return None
+
+
+def _read_json(path: str | None) -> dict:
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def _merge_by_key(layers: list[list], key: str) -> list:
+    """多层列表按 key 合并：后者覆盖前者（覆盖不改变首次出现的位置）。"""
+    od: dict = {}
+    for layer in layers:
+        for it in layer or []:
+            if isinstance(it, dict) and it.get(key) is not None:
+                od[it[key]] = it
+    return list(od.values())
+
+
+def merge_literals(paths: list[str]) -> list[Rule]:
+    """按 id 合并多个 literals.json → 规则（后者覆盖前者）。"""
+    return literals_to_rules(_merge_by_key([_read_json(p).get("items", []) for p in paths], "id"))
+
+
+def merge_rule_dicts(paths: list[str]) -> list[dict]:
+    """按 name 合并多个 rules.json 的 rules 列表（后者覆盖前者）。"""
+    return _merge_by_key([_read_json(p).get("rules", []) for p in paths], "name")
+
+
+def load_whitelist_multi(paths: list[str]) -> set[str]:
+    """白名单取并集（指纹集合，文件里不出现明文）。"""
+    global _WHITELIST
+    fps: set[str] = set()
+    for p in paths:
+        v = _read_json(p).get("fingerprints", [])
+        if isinstance(v, list):
+            fps |= set(v)
+    _WHITELIST = fps
+    return _WHITELIST
+
+
+# ----------------------------------------------------------------------------
 # 白名单（按「值的指纹」排除，文件里不出现明文）
 # ----------------------------------------------------------------------------
 
@@ -448,24 +520,48 @@ def load_whitelist(path: str) -> set[str]:
 # 规则加载
 # ----------------------------------------------------------------------------
 
-def load_rules(path: str, literals_path: str | None = None) -> list[Rule]:
+def load_rules(path: str, literals_path: str | None = None,
+               layered: bool = True) -> list[Rule]:
     """加载规则。字面量规则**排在前面**（优先级更高，专用规则优先于通用规则）。
 
+    配置分层（layered=True，默认；后者覆盖前者）：
+      1. 技能内置模板 `<技能目录>/config/rules.json`（基线，随技能升级）
+      2. **全局配置目录**（用户级 `<KM_CONFIG_HOME>/config/`）—— 所有源的默认
+      3. 每源目录（`path` 所在目录 `<秘密材料根>/<id>/config/`）—— 源级覆盖
+    rules.json 按 name 合并；literals.json 按 id 合并（全局 → 每源）；
+    whitelist.json 取并集。**因此改全局配置会立即生效**，不再是建源时的一次性种子。
+    传 layered=False 可退回「只看每源目录」的旧行为。
+
     literals_path 缺省为 rules.json 同目录下的 literals.json（存在才加载）。
-    whitelist 缺省为 rules.json 同目录下的 whitelist.json（存在才加载）；
     白名单按「值的指纹」匹配，因此配置文件里不含任何明文。
     """
-    with open(path, encoding="utf-8") as fh:
-        cfg = json.load(fh)
     base = os.path.dirname(os.path.abspath(path))
     if literals_path is None:
         literals_path = os.path.join(base, "literals.json")
-    load_whitelist(os.path.join(base, "whitelist.json"))
-    lit = load_literals(literals_path)
+    g = global_config_dir() if layered else None
+
+    skill_cfg = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config")
+    rule_paths = [os.path.join(skill_cfg, "rules.json")] if layered else []
+    if g:
+        rule_paths.append(os.path.join(g, "rules.json"))
+    rule_paths.append(path)
+    raw = merge_rule_dicts(rule_paths) if layered else _read_json(path).get("rules", [])
+
+    if layered:
+        lit_paths = ([os.path.join(g, "literals.json")] if g else []) + [literals_path]
+        lit = merge_literals(lit_paths)
+        load_whitelist_multi((
+            ([os.path.join(g, "whitelist.json")] if g else [])
+            + [os.path.join(base, "whitelist.json")]))
+    else:
+        load_whitelist(os.path.join(base, "whitelist.json"))
+        lit = load_literals(literals_path)
+
     rules = [
         Rule(**{k: v for k, v in r.items()
                 if k in Rule.__dataclass_fields__ and k != "rx"})
-        for r in cfg["rules"]
+        for r in raw
     ]
     return lit + rules
 

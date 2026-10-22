@@ -37,9 +37,10 @@ python scripts/guide.py --source <真源目录> --data-root <数据根> \
 
 - 写 `<KM_CONFIG_HOME>/sources/<id>.yaml`（`<KM_CONFIG_HOME>` 缺省 `%USERPROFILE%\.knowledge-manager-skills`）
 - 建工作副本 `<数据根>/<id>/` 与秘密材料目录 `<秘密材料根>/<id>/`（`config/ vault/{keys,map,raw,preview} reports/`）
-- 从技能 `config/` 复制 `rules.json`，由 `*.example.json` 生成 `whitelist.json` / `exclude.json`（已存在不覆盖）
+- 把技能模板 `rules.json` 与 `whitelist.json` / `exclude.json`（由 `*.example.json` 生成）**种子到全局配置目录** `<KM_CONFIG_HOME>/config/`（缺则建、已存在不覆盖）
+- 每源 `<秘密材料根>/<id>/config/` 只放 `literals.example.json`（示例）；**不再做每源快照**，避免快照遮蔽以后对全局配置的修改（改了不生效）
 - 写 `workspace.json`、`.desensitization-root`、`.gitignore`（隐私护栏）
-- **不创建** `literals.json`（由本机填）
+- **不创建** `literals.json`：真实字面量写在**全局** `<KM_CONFIG_HOME>/config/literals.json`（所有源共用、**改完即生效**），或写每源 `<秘密材料根>/<id>/config/literals.json`（仅本源覆盖）
 - 把 `data_root` / `private_backup_dir` / `tmp_root` 记入 `settings.yaml`
   （`tmp_root` 不指定时即为默认值：**技能目录下的 `.tmp/`**，不入 Git）
 
@@ -188,6 +189,14 @@ python scripts/literals_summary.py --data-root <km>
 ```
 
 真实片段只显示 `<len=N>`，占位符原样输出；**不泄露明文**。
+
+本工具还会做**编译检查**：`literal` 模式长度 < `min_len_guard`（默认 8）等
+**不会生成规则**的条目会显式标 `!! 不生效（被丢弃）` 并在末尾汇总警告 ——
+专门用于排查「改了 `literals.json` 却毫无反应」。
+
+字面量分层：**全局** `<KM_CONFIG_HOME>/config/literals.json`（所有源共用、**改完即生效**）
+→ **每源** `<秘密材料根>/<id>/config/literals.json`（按 `id` 合并、覆盖全局）。
+输出同时列出「每源现存覆盖项」以便发现陈旧遮蔽。
 
 ## probe.py —— 召回侦察（掩码版）
 
