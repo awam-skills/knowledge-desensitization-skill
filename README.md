@@ -8,7 +8,7 @@
 - **两级配置**：全局 `settings.yaml` + 每源 `sources/<id>.yaml`，落在用户配置根，不进 Git
 - **增量同步**：技能触发时真源→工作副本**增量**同步；源中删除的文件**批量询问**
 - **幂等**：稳定 HMAC 占位符，重复跑不套娃
-- **可回填**：`[REDACTED:...]` → 「见保险库：xxx」，人可读、可追溯
+- **可回填**：`[REDACTED:...]` → 「见保险库：<条目名> `[vault:...]`」，人可读、可追溯且可精确逆映射
 - **可离线恢复**：还原材料落「单独备份目录」；技能**只给建议、不代上传**
 - **只「用」不「读」密钥**：Agent 取密钥走 broker（`agent_secret.py`）——**命令行为主流程、MCP 可选、不强制**；
   值只注入子进程环境变量，**永不进模型上下文**（有 token 才有身份，未注册 = 只能读元数据）
@@ -57,7 +57,7 @@ python scripts/pipeline.py --id logseq-main --apply
 # 2.4（可选）凭据入 Bitwarden（★你自己终端）
 #   $env:BW_SESSION = (bw unlock --raw)
 #   pwsh -File scripts/bitwarden-import.ps1                 # 目录自动解析（要的是「秘密材料目录」）
-python scripts/backfill.py --data-root <秘密材料根>/<id> --apply   # 回填「见保险库：xxx」
+python scripts/backfill.py --data-root <秘密材料根>/<id> --apply   # 回填「见保险库：<条目名> [vault:...]」
 
 # 2.5（可选）可逆性校验（对真源逐字节比对，期望「不一致 0」）
 python scripts/recover.py --data-root <秘密材料根>/<id> --verify --source G:/Data/knowledge/logseq/main
@@ -141,7 +141,8 @@ chmod +x .git/hooks/pre-commit
 把还原材料落盘到**单独备份目录**并离线多份。
 
 **Q：需要 Bitwarden 才能恢复吗？**
-不需要。原文真相源是 `map.json`（含 token→原值）；Bitwarden 只是方便取用的副本，`bw-items.json` 不含原值。
+不需要。原文真相源是 `map.json`（含 token→原值）；回填引用内的 `[vault:...]` 主键也直接查 `map.json`。
+Bitwarden 只是方便取用的副本，`bw-items.json` 不含原值，也不参与恢复。
 分层保存（哪些能上云、哪些必须离线）见 `references/recovery.md`。
 
 **Q：误报太多怎么办？**

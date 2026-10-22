@@ -636,6 +636,10 @@ def _entropy_candidates(rule: Rule, text: str):
 # 关键词规则再抓一次）。
 TOKEN_RX = re.compile(r"\[REDACTED:[A-Za-z0-9_\-]+:[0-9a-f]{8}\]")
 
+# 回填引用里的唯一主键（见 paths.VAULT_REF）：与 TOKEN_RX 分开命名空间，
+# 扫描时一并保护，避免对已回填的工作副本再次脱敏时误伤主键。
+VAULT_ID_RX = re.compile(r"\[vault:([A-Za-z0-9_\-]+):([0-9a-f]{8})\]")
+
 
 # ----------------------------------------------------------------------------
 # 资源路径保护区（脱敏不改「资源文件名/路径」，避免 markdown 链接断裂）
@@ -684,6 +688,7 @@ def find_hits(text: str, rules: list[Rule], salt: bytes,
     保护区 = 既有占位符（保幂等）+ 资源路径/文件名（防链接断裂）。
     """
     protected = [(m.start(), m.end()) for m in TOKEN_RX.finditer(text)]
+    protected += [(m.start(), m.end()) for m in VAULT_ID_RX.finditer(text)]
     protected += resource_spans(text)
     raw: list[Hit] = []
     for idx, rule in enumerate(rules):

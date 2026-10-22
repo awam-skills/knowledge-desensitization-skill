@@ -86,8 +86,11 @@ make_token = hmac_sha256(salt, rule.name + "\0" + value)[:8]
 `backfill.py` 读 `bw-items.json`，取每个条目的自定义字段 `notes-token`，建立
 
 ```
-token → "见保险库：<条目名去掉 notes/ 前缀>"
+token → "见保险库：<条目名去掉 notes/ 前缀> [vault:<label>:<hash8>]"
 ```
+
+方括号内是唯一主键（`map.json` 的 token 去掉 `REDACTED` 前缀），恢复时直接查 `map.json`
+→ 不依赖条目名唯一性；主键不复用 `[REDACTED:...]`，重复回填不会二次替换。
 
 只替换 **`credential=true`** 的 label（PII 如手机号 / 邮箱保留为占位符），
 只改工作副本，`--apply` 才写盘并生成报告。

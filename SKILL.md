@@ -1,7 +1,7 @@
 ---
 name: knowledge-desensitization
 version: 1.0.0
-description: 把本地知识库（Logseq / Obsidian / 为知笔记 / 纯 Markdown）做成「可对外分享的脱敏副本」，并把抽出的凭据沉淀进 Bitwarden、把关键恢复件做离线备份。四层召回（字面量→厂商格式→关键词→熵兜底）识别密钥与 PII，稳定占位符保证幂等，回填把占位符换成人可读的「见保险库：xxx」。目录无关：源目录、镜像目录、数据根都在对话中配置；运行数据（映射表、私钥、明文清单）永不进 Git。在用户提到知识库脱敏、笔记脱敏、导出/分享前清理隐私、扫描并替换 API key、把凭据归档进 Bitwarden、或对脱敏产物做离线备份时使用。另含「供 Agent 使用密钥」的 broker（只暴露「用」不暴露「读」；**命令行为主流程、MCP 可选、不强制**；值永不进模型上下文）。
+description: 把本地知识库（Logseq / Obsidian / 为知笔记 / 纯 Markdown）做成「可对外分享的脱敏副本」，并把抽出的凭据沉淀进 Bitwarden、把关键恢复件做离线备份。四层召回（字面量→厂商格式→关键词→熵兜底）识别密钥与 PII，稳定占位符保证幂等，回填把占位符换成人可读且可精确逆映射的「见保险库：<条目名> [vault:...]」。目录无关：源目录、镜像目录、数据根都在对话中配置；运行数据（映射表、私钥、明文清单）永不进 Git。在用户提到知识库脱敏、笔记脱敏、导出/分享前清理隐私、扫描并替换 API key、把凭据归档进 Bitwarden、或对脱敏产物做离线备份时使用。另含「供 Agent 使用密钥」的 broker（只暴露「用」不暴露「读」；**命令行为主流程、MCP 可选、不强制**；值永不进模型上下文）。
 disable-model-invocation: true
 ---
 
@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 把一份**内部知识库**变成可以放心对外分享的副本：目录结构、双链 `[[page]]`、块引用
 `((uuid))`、标签、日期全部保留，只把不该出门的内容换掉；抽出的真凭据进 Bitwarden，
-占位符回填成「见保险库：xxx」；最后把**恢复三件套**一次性备份到用户指定的目录。
+占位符回填成「见保险库：<条目名> [vault:...]」；最后把**恢复三件套**一次性备份到用户指定的目录。
 
 ## 核心不变量
 
@@ -145,7 +145,7 @@ python scripts/recover.py --data-root <km> --file <相对路径> --apply   # 单
 pwsh -File scripts/bitwarden-import.ps1                    # 自动解析秘密材料目录（无需传参）
 pwsh -File scripts/bitwarden-import.ps1 -Id <源id>          # 或显式 -SecretDir <秘密材料目录>
 pwsh -File scripts/bitwarden-import.ps1 -DryRun            # 只预览（不解锁、不导入）
-python scripts/backfill.py --data-root <km> --apply        # [REDACTED] → 「见保险库：xxx」
+python scripts/backfill.py --data-root <km> --apply        # [REDACTED] → 「见保险库：<条目名> [vault:...]」
 ```
 
 ### 待改进
@@ -191,7 +191,8 @@ python scripts/materials.py --id <id> --apply --verify
   （加密导出，勿用明文 `--format json`），自行放入离线介质。
 
 **恢复靠 `map.json`，不靠 Bitwarden**：`recover.py` 用「工作副本 + map.json」恢复原文，
-同时处理 `[REDACTED:...]`（token 形态）与「见保险库：xxx」（引用形态），两种模式：
+同时处理 `[REDACTED:...]`（token 形态）与「见保险库：<条目名> [vault:...]」（引用形态，
+按内嵌主键查 `map.json`），两种模式：
 
 ```bash
 python scripts/recover.py --data-root <root> --verify [--source <源>]   # 只校验

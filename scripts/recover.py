@@ -1,19 +1,25 @@
 # AI生成
 """recover.py — 用「离线备份 + 脱敏镜像」重建原始内容（把占位符还原成原文）。
 
-背景（用户 2026-10-18 需求）
+背景（用户 2026-10-18 需求；引用标识 2026-10-23 定稿）
 - 要求：**备份的内容 + sanitized 镜像，必须能够恢复出原始知识库。**
 - 脱敏镜像里的凭据可能是两种形态：
-    1) token 形态   [REDACTED:<label>:<hmac8>]   —— sanitize 刚产出的样子
-    2) 引用形态     见保险库：<条目名>            —— backfill 之后的样子
-- 两者都能还原：
+    1) token 形态   [REDACTED:<label>:<hmac8>]                       —— sanitize 刚产出的样子
+    2) 引用形态     见保险库：<条目名> [vault:<label>:<hmac8>]        —— backfill 之后的样子
+- 两者都能还原，且**都只依赖 vault/map/map.json**：
     token  → 原文    取自 vault/map/map.json
-    引用名 → token   取自 vault/map/bw-items.json（再经 map.json 取原文）
+    引用   → 原文    按引用里内嵌的 [vault:...] 主键查 map.json
 
-为什么不需要 Bitwarden 也能恢复
-- 真正的「原文真相源」是 vault/map/map.json（token → 原值），它就在离线备份的必须件里。
-- Bitwarden 只是「方便取用的副本」；bw-items.json 只存 token ↔ 条目名，不含原值。
-- 因此：**map.json（+ bw-items.json 用于引用形态）就是全部恢复所需**，与 Bitwarden 是否可用无关。
+为什么引用用 vault: 主键（2026-10-23 定稿）
+- 旧式引用「见保险库：<条目名>」按**条目名**逆映射（经 bw-items.json），
+  而条目名不唯一（同文件同标签的多个凭据同名）→ 重名处不可精确还原。
+- 现引用为 `见保险库：<条目名> [vault:<label>:<hash8>]`：
+  `<条目名>` 保留人可读、且与 Bitwarden 条目名逐字对应（便于网页端搜索）；
+  `[vault:<label>:<hash8>]` 是唯一主键（= map.json 的 token 去掉 `REDACTED` 前缀）
+  → 恢复**不依赖条目名唯一性**。
+- 不复用 `[REDACTED:...]` 形态：那是 sanitize 的占位符，backfill 重跑会二次替换（不幂等），
+  且容易与镜像里保留的 PII 占位符混淆。
+- 因此恢复只需 map.json，与 bw-items.json / Bitwarden 是否可用无关。
 
 安全
 - 原文来自 vault/map/map.json（SECRET），本脚本**绝不打印任何原文**
@@ -58,10 +64,15 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sanitize_lib import (  # noqa: E402
-    TOKEN_RX, iter_files, read_text, is_text_file,
+    TOKEN_RX, VAULT_ID_RX, iter_files, read_text, is_text_file,
     GENERATED_DIRS, RUNTIME_DIRS, GENERATED_NAMES,
 )
 import paths  # noqa: E402
+
+# 引用形态：见保险库：<条目名> [vault:<label>:<hash8>]，最后一个方括号是唯一主键
+_REF_RX = re.compile(
+    re.escape(paths.VAULT_REF) + r"[^\n]*?" + VAULT_ID_RX.pattern
+)
 
 
 def load_tokens(root: str) -> dict:
@@ -74,53 +85,23 @@ def load_tokens(root: str) -> dict:
         return json.load(fh).get("tokens", {})
 
 
-def load_name_to_token(root: str) -> dict[str, str]:
-    """从 bw-items.json 建 引用名 → token。缺文件时返回空（只影响引用形态）。"""
-    p = os.path.join(paths.map_dir(root), "bw-items.json")
-    if not os.path.exists(p):
-        return {}
-    try:
-        with open(p, encoding="utf-8") as fh:
-            blob = json.load(fh)
-    except (OSError, ValueError):
-        return {}
-    items = blob.get("items", []) if isinstance(blob, dict) else blob
-    out: dict[str, str] = {}
-    for it in items:
-        tok = None
-        for f in (it.get("fields") or []):
-            if f.get("name") == paths.TOKEN_FIELD:
-                tok = f.get("value")
-                break
-        if not tok:
-            continue
-        name = it.get("name") or ""
-        if name.startswith(paths.ITEM_PREFIX + "/"):
-            name = name[len(paths.ITEM_PREFIX) + 1:]
-        if name:
-            out[name] = tok
-    return out
+def reconstruct(text: str, tokens: dict, stats: collections.Counter) -> str:
+    """把引用形态与 token 形态都还原成原文。只统计计数，不打印原文。
 
+    引用形态内嵌 [vault:<label>:<hash8>] 主键 → 直接查 map.json，**不依赖条目名唯一性**。
+    """
+    # 1) 引用形态：见保险库：<条目名> [vault:<label>:<hash8>]
+    def sub_ref(m: re.Match) -> str:
+        key = f"[REDACTED:{m.group(1)}:{m.group(2)}]"
+        rec = tokens.get(key)
+        v = rec.get("value") if rec else None
+        if v is None:
+            stats["ref_unresolved"] += 1
+            return m.group(0)
+        stats["ref_replaced"] += 1
+        return v
 
-def reconstruct(text: str, tokens: dict, name2tok: dict[str, str],
-                stats: collections.Counter) -> str:
-    """把引用形态与 token 形态都还原成原文。只统计计数，不打印原文。"""
-    # 1) 引用形态：见保险库：<name>  —— 长名优先，避免前缀互相吞并
-    if name2tok:
-        names = sorted(name2tok, key=len, reverse=True)
-        pat = re.compile("|".join(re.escape(paths.VAULT_REF + n) for n in names))
-
-        def sub_ref(m: re.Match) -> str:
-            name = m.group(0)[len(paths.VAULT_REF):]
-            rec = tokens.get(name2tok.get(name, ""))
-            v = rec.get("value") if rec else None
-            if v is None:
-                stats["ref_unresolved"] += 1
-                return m.group(0)
-            stats["ref_replaced"] += 1
-            return v
-
-        text = pat.sub(sub_ref, text)
+    text = _REF_RX.sub(sub_ref, text)
 
     # 2) token 形态： [REDACTED:...]
     def sub_tok(m: re.Match) -> str:
@@ -133,7 +114,7 @@ def reconstruct(text: str, tokens: dict, name2tok: dict[str, str],
         return v
 
     text = TOKEN_RX.sub(sub_tok, text)
-    # 未被解析的引用（名字不在 bw-items 里）残留计数
+    # 剩余「见保险库：」计数：内嵌主键未被解析时会残留 → 记为未还原
     stats["ref_leftover"] += text.count(paths.VAULT_REF)
     return text
 
@@ -200,7 +181,6 @@ def main() -> int:
     single = bool(args.file)
 
     tokens = load_tokens(root)
-    name2tok = load_name_to_token(root)
 
     stats: collections.Counter = collections.Counter()
     rows: list[tuple[str, str, str]] = []   # (rel, new_text, original_text)
@@ -213,7 +193,7 @@ def main() -> int:
             continue
         if not single and "REDACTED" not in text and paths.VAULT_REF not in text:
             continue
-        new = reconstruct(text, tokens, name2tok, stats)
+        new = reconstruct(text, tokens, stats)
         rel = os.path.relpath(p, mirror)
         rows.append((rel, new, text))
         if new != text:
@@ -234,8 +214,8 @@ def main() -> int:
 
     print("镜像目录：", mirror)
     print("映射表　：", os.path.join(paths.map_dir(root), "map.json"))
-    print("引用映射：", os.path.join(paths.map_dir(root), "bw-items.json"),
-          f"（{len(name2tok)} 条）" if name2tok else "（缺失，仅能还原 token 形态）")
+    print("引用形态：", f"{paths.VAULT_REF}<条目名> [vault:<label>:<hash8>]"
+                        "（按内嵌主键经 map.json 还原）")
     print()
     print(f"token 形态还原 : {stats['token_replaced']} 处"
           f"（未解析 {stats['token_unresolved']}）")
@@ -249,8 +229,8 @@ def main() -> int:
     unresolved = (stats["token_unresolved"] + stats["ref_unresolved"]
                   + stats["ref_leftover"])
     if unresolved:
-        print("\n⚠️  存在未解析占位符：请确认 map.json / bw-items.json 是否来自同一份备份，"
-              "或该处是否为 PII（PII 也应在 map.json 里，应能还原）。")
+        print("\n⚠️  存在未解析占位符：请确认 map.json 是否来自同一份备份，"
+              "或该引用是否缺少 [vault:<label>:<hash8>] 主键。")
 
     if not args.apply:
         print("\n[校验模式] 未写盘。加 --apply 才重建。")

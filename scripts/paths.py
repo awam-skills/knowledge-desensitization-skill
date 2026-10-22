@@ -70,7 +70,10 @@ def default_secrets_root() -> str:
 #   fields 里以 TOKEN_FIELD 记录 token，供 backfill 建立 token→条目 映射
 ITEM_PREFIX = "notes"
 TOKEN_FIELD = "notes-token"
-VAULT_REF = "见保险库："   # 回填时写进镜像的引用前缀
+VAULT_REF = "见保险库："   # 回填写进镜像的引用前缀
+#   引用形如 "<前缀><条目名> [vault:<label>:<hash8>]"：方括号内是唯一主键
+#   （map.json 的 token 去掉 REDACTED 前缀）→ 恢复不依赖条目名唯一性；
+#   主键不复用 [REDACTED:...]，backfill 重跑不会二次替换（幂等）。
 
 
 # ----------------------------------------------------------------------------

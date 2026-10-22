@@ -295,7 +295,7 @@ try {
         $itemsFile = Join-Path $MapDir "bw-items.json"
         $items | Out-File -LiteralPath $itemsFile -Encoding utf8
         Write-Host "  已写入：$itemsFile（$imported 条）" -ForegroundColor Green
-        Write-Host "  下一步（回填「见保险库：xxx」）：" -ForegroundColor Yellow
+        Write-Host "  下一步（回填「见保险库：<条目名> [vault:...]」）：" -ForegroundColor Yellow
         Write-Host "    python scripts\backfill.py --data-root `"$resolvedDir`" --apply" -ForegroundColor Yellow
         Write-Host "    （backfill 的 --data-root 同样指**秘密材料目录**）" -ForegroundColor DarkGray
     }

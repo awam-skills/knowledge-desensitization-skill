@@ -9,13 +9,13 @@
 
 | 你手里有的东西 | 能恢复出什么 |
 |---|---|
-| 仅工作副本 | 只能看到占位符（`[REDACTED:...]` 或「见保险库：xxx」），**看不到原文** |
-| 工作副本 + `map.json` | 能还原**所有 token 形态**占位符（凭据 / PII / 熵）→ 等于原文 |
-| 工作副本（已回填）+ `map.json` + `bw-items.json` | 能还原**引用形态**（「见保险库：xxx」）→ 等于原文 |
+| 仅工作副本 | 只能看到占位符（`[REDACTED:...]` 或「见保险库：<条目名> `[vault:...]`」），**看不到原文** |
+| 工作副本 + `map.json` | 能还原**所有占位符**（token 形态 + 引用形态）→ 等于原文 |
+| 工作副本（已回填）+ `map.json` | 能还原**引用形态**（按内嵌 `[vault:...]` 主键查 `map.json`）→ 等于原文 |
 | 只有 Bitwarden | 能看到凭据值，但**接不回**它在哪篇笔记的哪个位置（map.json 才有 occurrences） |
 
 > 结论：**`map.json`（+ `salt.bin`）是恢复的核心；Bitwarden 只是方便取用的副本。**
-> `bw-items.json` 不含原值（只有 token ↔ 条目名），它只为「引用形态」还原服务。
+> `bw-items.json` 不含原值（只有 token ↔ 条目名），只用于 `backfill` 生成条目名，**不参与恢复**。
 
 ### 一键校验（推荐每次脱敏/材料落盘后都跑）
 
@@ -53,8 +53,7 @@ python scripts/recover.py --data-root <秘密材料根>/<id> --file pages/env-AI
 
 1. 重新配置源（真源路径可能已变）：
    `python scripts/guide.py --source <真源> --data-root <新数据根> --id <id> --name <name>`
-2. 从离线备份取回并放回 `<新数据根>/.km/<id>/`：`vault/map/salt.bin`、`vault/map/map.json`
-   （需要引用形态时再加 `vault/map/bw-items.json`）。
+2. 从离线备份取回并放回 `<新数据根>/.km/<id>/`：`vault/map/salt.bin`、`vault/map/map.json`。
 3. 取回工作副本，放到 `<新数据根>/<id>/`。
 4. 校验：`python scripts/recover.py --data-root <新数据根>/.km/<id> --verify`
 5. 重建：`python scripts/recover.py --data-root <新数据根>/.km/<id> --apply`

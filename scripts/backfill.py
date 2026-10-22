@@ -1,5 +1,13 @@
 # AI生成
-"""backfill：把脱敏镜像里的凭据 token 换成「见保险库：xxx」引用。
+"""backfill：把脱敏镜像里的凭据 token 换成「见保险库：<条目名> [vault:<label>:<hash8>]」引用。
+
+引用形态（2026-10-23 定稿）
+    见保险库：<条目名> [vault:<label>:<hash8>]
+    - <条目名>：Bitwarden 条目名去掉 "notes/" 前缀，人可读、且与网页端条目名逐字对应，便于搜索。
+    - [vault:<label>:<hash8>]：唯一主键，等于 map.json 的 token 去掉 "REDACTED" 前缀；
+      recover 直接按它查 map.json → 恢复**不依赖条目名唯一性**（同名条目也能精确还原）。
+    - 主键用 vault: 而非直接嵌 [REDACTED:...]：引用不会被 backfill 二次替换（幂等），
+      也不会与镜像里保留的 PII 占位符混淆。
 
 依赖
     vault/map/bw-items.json   ← 由 scripts/bitwarden-import.ps1 生成
@@ -41,7 +49,6 @@ def main() -> int:
                     help="bw-items.json；缺省 <data-root>/vault/map/bw-items.json")
     ap.add_argument("--rules", default=None,
                     help="规则文件；缺省 <data-root>/config/rules.json")
-    ap.add_argument("--format", default=paths.VAULT_REF + "{name}")
     ap.add_argument("--apply", action="store_true")
     args = ap.parse_args()
 
@@ -62,7 +69,7 @@ def main() -> int:
 
     cred_labels = {r.label for r in load_rules(rules_path) if r.credential}
 
-    mapping: dict[str, str] = {}
+    names: dict[str, str] = {}
     for it in items:
         tok = None
         for f in (it.get("fields") or []):
@@ -74,8 +81,7 @@ def main() -> int:
         name = (it.get("name") or "")
         if name.startswith(paths.ITEM_PREFIX + "/"):
             name = name[len(paths.ITEM_PREFIX) + 1:]
-        name = name or it.get("id", "")
-        mapping[tok] = args.format.format(name=name, id=it.get("id", ""))
+        names[tok] = name or it.get("id", "")
 
     stats = collections.Counter()
     changed: list[tuple[str, str]] = []
@@ -89,18 +95,18 @@ def main() -> int:
             if label not in cred_labels:
                 stats["pii_kept"] += 1
                 return m.group(0)
-            ref = mapping.get(m.group(0))
-            if not ref:
+            if m.group(0) not in names:
                 stats["unmapped"] += 1
                 return m.group(0)
+            name = names[m.group(0)] or m.group(2)
             stats["replaced"] += 1
-            return ref
+            return f"{paths.VAULT_REF}{name} [vault:{label}:{m.group(2)}]"
 
         new = TOKEN_RX.sub(sub, text)
         if new != text:
             changed.append((p, new))
 
-    print(f"可映射条目：{len(mapping)}")
+    print(f"可映射条目：{len(names)}")
     print(f"替换 {stats['replaced']} 处 / 未映射 {stats['unmapped']} 处 / PII 保留 {stats['pii_kept']} 处")
     print(f"涉及文件：{len(changed)}")
 

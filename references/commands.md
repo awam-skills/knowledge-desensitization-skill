@@ -129,13 +129,15 @@ pwsh -File scripts/bitwarden-import.ps1 [-Id <源id>] [-SecretDir <秘密材料�
 → `bw sync` → `bw import` → `bw list items --search "notes/"` 写 `vault/map/bw-items.json`（>0 才写）
 → `finally { bw lock }`。
 
-## backfill.py —— 回填「见保险库：xxx」
+## backfill.py —— 回填「见保险库：<条目名> [vault:...]」
 
 ```bash
 python scripts/backfill.py --data-root <km> [--mirror <dir>] [--apply]
 ```
 
+- 引用形如 `见保险库：<条目名> [vault:<label>:<hash8>]`；方括号内是唯一主键（`map.json` 的 token 去掉 `REDACTED` 前缀）
 - 只替换 `credential=true` 的 label；PII 保留
+- 幂等：引用不复用 `[REDACTED:...]`，重复运行不会二次替换
 - `--apply` 才写盘 + 生成 `reports/backfill-<ts>.md`
 - 只动工作副本，不动真源
 
@@ -153,7 +155,8 @@ python scripts/recover.py --data-root <km> --file pages/env-AI.md --apply [--out
 ```
 
 - **两种模式**：不传 `--file` = 全量恢复；传 `--file` = 只恢复指定文件（复合同一套还原逻辑）
-- 同时处理 `[REDACTED:...]`（token 形态，用 `map.json`）与「见保险库：xxx」（引用形态，用 `bw-items.json` + `map.json`）
+- 同时处理 `[REDACTED:...]`（token 形态）与「见保险库：<条目名> [vault:...]」（引用形态）；
+  两者都直接查 `map.json`，**不需要 `bw-items.json`**（它只用于 backfill 建条目名）
 - `--verify` 只读；给了 `--source` 会与真源逐字节比对（期望「不一致 0」）
 - 输出默认落 `<km>/recovered/<name>/`（`--file` 时为该文件在树中的相对位置），**不覆盖工作副本**
 - **恢复不依赖 Bitwarden**：`map.json` 是原文真相源
