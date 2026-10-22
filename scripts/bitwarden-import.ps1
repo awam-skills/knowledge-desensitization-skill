@@ -32,7 +32,7 @@ $Bw = $BwPath
 if (-not (Get-Command $Bw -ErrorAction SilentlyContinue)) {
     if (-not (Test-Path $Bw)) { throw "找不到 bw：$Bw（用 -BwPath 指定绝对路径）" }
 }
-if (-not (Test-Path $MapDir)) { throw "找不到目录：$MapDir（先跑 init_workspace.py / sanitize.py --apply）" }
+if (-not (Test-Path $MapDir)) { throw "找不到目录：$MapDir（先跑 guide.py，再 pipeline.py --apply）" }
 
 if ($File) {
     $importFile = Get-Item $File

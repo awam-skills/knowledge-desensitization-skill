@@ -3,12 +3,13 @@
 把本地知识库（Logseq / Obsidian / 为知笔记 / 纯 Markdown）做成**可对外分享的脱敏副本**，
 并把抽出的真凭据沉淀进 Bitwarden、把恢复关键件做**离线备份**。
 
-- **只读源目录**：源一个字节不改，全部写入落在镜像与数据根
-- **隐私数据不进 Git**：`.gitignore` + `pre-commit` 双护栏，运行数据永不入库
-- **目录无关**：源目录 / 镜像目录 / 数据根都在对话里配置，落在 `workspace.json`
+- **真源只读 + 就地脱敏**：真源一个字节不改；脱敏作用在**工作副本**上，输入=输出（同一份）
+- **密文与钥匙分道**：工作副本（可上云 / 私有 Git）与秘密材料 `.km/`（永不外传）物理分开
+- **两级配置**：全局 `settings.yaml` + 每源 `sources/<id>.yaml`，落在用户配置根，不进 Git
+- **增量同步**：技能触发时真源→工作副本**增量**同步；源中删除的文件**批量询问**
 - **幂等**：稳定 HMAC 占位符，重复跑不套娃
 - **可回填**：`[REDACTED:...]` → 「见保险库：xxx」，人可读、可追溯
-- **可离线恢复**：一条命令把私钥 / salt / 映射表拷到指定目录
+- **可离线恢复**：还原材料落「单独备份目录」；技能**只给建议、不代上传**
 
 机制细节见 `SKILL.md` 与 `references/`。
 
@@ -18,8 +19,8 @@
 
 | 依赖 | 是否必需 | 安装（Windows / scoop） |
 |---|---|---|
-| Python 3.10+ | 必需 | 任意发行版；脚本仅用标准库 |
-| `age` + `age-keygen` | 可选 | `scoop install age` |
+| Python 3.10+ | 必需 | 任意发行版 |
+| PyYAML | 必需 | 配置读写（`km_config.py`）；`pip install pyyaml` |
 | `bw`（Bitwarden CLI） | 可选 | `scoop install bitwarden-cli` |
 | `pwsh`（PowerShell 7） | 用 bw 时必需 | `scoop install pwsh` |
 
@@ -28,58 +29,69 @@
 ## 2. 快速上手
 
 ```bash
-# 2.1 初始化一个数据工作区（源目录只读）
-python scripts/init_workspace.py \
+# 2.1 引导一个源（写 <KM_CONFIG_HOME>/sources/<id>.yaml 与 settings.yaml）
+#     <KM_CONFIG_HOME> = %USERPROFILE%\.knowledge-manager-skills（可用 env 覆盖）
+python scripts/guide.py \
+    --source G:/Data/knowledge/logseq/main \
     --data-root G:/Knowledge/data \
-    --source   G:/Knowledge/my-notes \
-    --name     notes
+    --private-backup-dir G:/Knowledge/private     # 先加 --dry-run 看将建的结构与配置
 
-# 2.2 本机创建明文口令清单（绝不外传）
-cp G:/Knowledge/data/config/literals.example.json G:/Knowledge/data/config/literals.json
-#     然后按示例填写；此文件已在 .gitignore 中，永不入库
+# 2.2 一条命令跑完整流程（缺省 dry-run；加 --apply 执行）
+python scripts/pipeline.py --id logseq-main --apply
+#   1) sync.py      真源 → 工作副本（增量；源中删除的文件批量询问）
+#   2) sanitize.py  工作副本就地脱敏（幂等、可逆）
+#   3) materials.py 还原材料落盘到「单独备份目录」
+#   → 末尾打印备份建议（工作副本→网盘/私有 Git；材料→私密离线）
 
-# 2.3 扫描 → 预览 → 脱敏
-python scripts/scan.py     --data-root G:/Knowledge/data
-python scripts/preview.py  --data-root G:/Knowledge/data          # 写 vault/preview/*.html
-python scripts/sanitize.py --data-root G:/Knowledge/data --apply  # dry-run 去掉 --apply
+# 2.3（可选）明文口令清单：本机复制并填写（绝不外传）
+#   cp <data_root>/.km/<id>/config/literals.example.json .../config/literals.json
 
-# 2.4 凭据入 Bitwarden（★在你自己的终端执行）
-#     PowerShell 7:
-#       $env:BW_SESSION = (bw unlock --raw)
-#       pwsh -File scripts/bitwarden-import.ps1 -DataRoot G:/Knowledge/data
+# 2.4（可选）凭据入 Bitwarden（★你自己终端）
+#   $env:BW_SESSION = (bw unlock --raw)
+#   pwsh -File scripts/bitwarden-import.ps1 -DataRoot <data_root>/.km/<id>
+python scripts/backfill.py --data-root <data_root>/.km/<id> --apply   # 回填「见保险库：xxx」
 
-# 2.5 回填「见保险库：xxx」
-python scripts/backfill.py --data-root G:/Knowledge/data --apply
-
-# 2.6 分层离线备份（A+B 可上云 / C+D 必须离线）
-python scripts/offline_backup.py --data-root G:/Knowledge/data --dest E:/kd-backup --verify
-#   产出 cloud/（镜像+加密档，直接上传网盘）、offline/（密钥材料，手动拷贝）、meta/（配置）
+# 2.5（可选）可逆性校验（对真源逐字节比对，期望「不一致 0」）
+python scripts/recover.py --data-root <data_root>/.km/<id> --verify --source G:/Data/knowledge/logseq/main
 ```
 
-每一步都会打印**计数与路径**，不打印任何凭据值。
+每一步都只打印**计数与路径**，不打印任何凭据值。
 
-## 3. 数据布局
+## 3. 数据布局（每源三件套）
+
+用户配置根（**不进 Git**）：`%USERPROFILE%\.knowledge-manager-skills`
+→ `settings.yaml`（全局参数）+ `config/`（全局规则/白名单/排除/literals）+ `sources/<id>.yaml`（每源，可覆盖全局）
 
 ```
-<data-root>/
-├── .desensitization-root      # 工作区标记（供脚本自动识别数据根）
-├── workspace.json             # source / mirror / name
-├── .gitignore                 # 隐私护栏
-├── config/                    # rules / whitelist / exclude / literals.json*
-├── vault/                     # ★敏感，永不入库
-│   ├── keys/age-key.txt
-│   ├── map/{salt.bin,map.json,bw-import-*.json,bw-items.json}
-│   ├── raw/*.zip.age
-│   ├── preview/*.html
-│   └── superseded/            # 软删归档（只留最新）
-├── reports/                   # 无原文的审计报告
-└── sanitized/<name>/          # ★脱敏镜像（向量库唯一输入）
+<data_root>/
+├── <id>/                       # 工作副本（就地脱敏；可上云 / 私有 Git）
+│   └── journals/ pages/ ...    # = 脱敏后的知识库内容
+└── .km/<id>/                   # ★秘密材料与运行态（永不外传）
+    ├── .desensitization-root
+    ├── workspace.json          # source / mirror / name
+    ├── .gitignore              # 隐私护栏
+    ├── config/                 # rules / whitelist / exclude / literals.json*
+    ├── vault/                  # ★ keys/ map/ preview/ superseded/
+    └── reports/                # 无原文的审计报告
+```
+
+独立备份目录（`materials.py` 落盘，**建议离线**）：
+
+```
+<private_backup_dir>/<id>/
+├── materials/                  # C+D 密材：salt / map / 密钥 / literals
+├── meta/                       # 配置（rules / whitelist / exclude）
+├── MANIFEST.json
+└── RESTORE.md
 ```
 
 ## 4. 隐私边界（重要）
 
-**永不进 Git**：`vault/`、`sanitized/`、`reports/`、`workspace.json`、
-`.desensitization-root`、`config/literals.json`、`bw-*.json`、`*.age`。
+**永不进 Git**：整个秘密材料目录 `.km/<id>/`（含 `vault/`、`config/literals.json`、
+`workspace.json`、`reports/`、`bw-*.json`），以及用户配置根下的 `settings.yaml` /
+`sources/*.yaml`（不在任何仓库内）。
+
+**可上云 / 私有 Git**：**只有**工作副本 `<data_root>/<id>/`（已脱敏，且其中不含 `.km/`）。
 
 **永不外传**：上述任何文件的内容、`BW_SESSION`、Bitwarden 主密码。
 
@@ -98,7 +110,7 @@ chmod +x .git/hooks/pre-commit
 
 技能仓对外发布前，请逐项确认：
 
-- [ ] `git status` 中没有 `vault/`、`sanitized/`、`reports/`、`config/literals.json`
+- [ ] `git status` 中没有 `.km/`、`vault/`、`reports/`、`config/literals.json`
 - [ ] `config/` 里只有 `*.example.json` 与 `rules.json`（无 `literals.json`）
 - [ ] 全仓无明文凭据：`git grep -n -E 'AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{20,}'` 无值命中
 - [ ] `references/` / `README.md` / `SKILL.md` 未粘任何真实片段
@@ -106,18 +118,19 @@ chmod +x .git/hooks/pre-commit
 
 ## 6. 常见问题
 
-**Q：脚本报「找不到数据根」？**
-先跑 `init_workspace.py`，或用 `--data-root` / 环境变量 `DESENS_DATA_ROOT` 显式指定。
+**Q：脚本报「找不到数据根 / 找不到源配置」？**
+先跑 `python scripts/guide.py --source <真源目录> --data-root <数据根>`（写入源配置），
+或用 `--data-root` / 环境变量 `KM_DATA_ROOT` 显式指定。
 
 **Q：`bw unlock` 在脚本里失败？**
 `pwsh -File` 子进程无法弹交互式主密码提示。请在你**自己的交互终端**先
 `$env:BW_SESSION = (bw unlock --raw)`，确认 `bw status` 为 `unlocked`，再跑导入脚本（脚本会复用会话）。
 
 **Q：镜像里的 `[REDACTED:...]` 还能还原吗？**
-能，只要 `vault/map/map.json` + `vault/map/salt.bin` 在。用 `scripts/recover.py` 用「备份 + 镜像」整体重建，
-或用 `scripts/restore.py` 按单个 token 填回。
-**这三件套 + age 私钥丢了就永远还原不了** —— 所以务必 `offline_backup.py` 做分层离线备份
-（`cloud/` 上传网盘、`offline/` 拷到离线介质）。
+能，只要 `<data_root>/.km/<id>/vault/map/{map.json,salt.bin}` 在。用 `scripts/recover.py`
+拿「工作副本 + `map.json`」整体重建，或用 `scripts/restore.py` 按单个 token 填回。
+**salt / map 丢了就永远还原不了** —— 所以务必用 `materials.py`
+把还原材料落盘到**单独备份目录**并离线多份。
 
 **Q：需要 Bitwarden 才能恢复吗？**
 不需要。原文真相源是 `map.json`（含 token→原值）；Bitwarden 只是方便取用的副本，`bw-items.json` 不含原值。

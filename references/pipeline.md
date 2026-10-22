@@ -8,7 +8,7 @@
 | 层 | 名称 | 规则来源 | 说明 |
 |---|---|---|---|
 | L0 | 字面量 | `config/literals.json` | 你亲自填的明文口令 / 片段；`match: literal`（整串）、`context`（关键词邻域）、`pair`（片段组合） |
-| L1 | 厂商格式 | `config/rules.json` | `AKIA…`、`sk-…`、`ghp_…`、`xox…`、JWT、`-----BEGIN PRIVATE KEY-----` 等 |
+| L1 | 厂商格式 | `config/rules.json` | `AKIA…`、`sk-…`、`ghp_…`、`xox…`、JWT、PEM 私钥块（`BEGIN…PRIVATE KEY`）等 |
 | L2 | 关键词邻域 | `config/rules.json` | `password = …`、`token: …` 等赋值语境 |
 | L3 | 熵兜底 | `config/rules.json`（`mode: entropy`） | 无格式但高熵的随机串：`len≥min_len` 且 `熵≥min_entropy` 且 `字符类≥min_classes`，且不在 `exclude_regex` |
 
@@ -48,7 +48,8 @@ make_token = hmac_sha256(salt, rule.name + "\0" + value)[:8]
 2. 迭代到**不动点**（`sanitize.py` 最多 4 轮，直到无新命中）
 3. 稳定 HMAC token
 
-因此**重复执行 sanitize 是安全的**：镜像不变，计数不变。
+因此**重复执行 sanitize 是安全的**：工作副本不变，计数不变。
+脱敏对工作副本**就地**执行（`--in-place`，幂等覆写），真源始终只读。
 
 ## 4. 读写保真
 
@@ -57,16 +58,18 @@ make_token = hmac_sha256(salt, rule.name + "\0" + value)[:8]
 
 ## 5. 产物与去向
 
+> 下表 `<km>` = 该源的**秘密材料目录** `<data_root>/.km/<id>`（永不外传）。
+
 | 产物 | 位置 | 含原文？ | 入库？ |
 |---|---|---|---|
-| 脱敏镜像 | `sanitized/<name>/` | 否（仅占位符 / PII / 熵串） | 可选 |
-| 审计报告 | `reports/sanitize-<ts>.{md,json}` | 否 | 可选 |
-| 映射表 | `vault/map/map.json` | **是** | 永不 |
-| BW 导入清单 | `vault/map/bw-import-<ts>.json` | **是** | 永不 |
-| BW 条目标识 | `vault/map/bw-items.json` | 否（token→条目名） | 永不 |
-| 回填报告 | `reports/backfill-<ts>.md` | 否 | 可选 |
-| 原始快照 | `vault/raw/<name>-<ts>.zip.age` | 加密 | 永不 |
-| 上下文预览 | `vault/preview/preview-<ts>.html` | **是** | 永不 |
+| 脱敏工作副本 | `<data_root>/<id>/`（就地） | 否（仅占位符 / PII / 熵串） | 可选（**仅此份可对外**） |
+| 审计报告 | `<km>/reports/sanitize-<ts>.{md,json}` | 否 | 可选 |
+| 映射表 | `<km>/vault/map/map.json` | **是** | 永不 |
+| BW 导入清单 | `<km>/vault/map/bw-import-<ts>.json` | **是** | 永不 |
+| BW 条目标识 | `<km>/vault/map/bw-items.json` | 否（token→条目名） | 永不 |
+| 回填报告 | `<km>/reports/backfill-<ts>.md` | 否 | 可选 |
+| 上下文预览 | `<km>/vault/preview/preview-<ts>.html` | **是** | 永不 |
+| 还原材料 | `<dest>/<id>/{materials,meta}/`（`materials.py`） | **是** | 永不 |
 
 ## 6. 回填（backfill）
 
@@ -77,9 +80,9 @@ token → "见保险库：<条目名去掉 notes/ 前缀>"
 ```
 
 只替换 **`credential=true`** 的 label（PII 如手机号 / 邮箱保留为占位符），
-只改镜像，`--apply` 才写盘并生成报告。
+只改工作副本，`--apply` 才写盘并生成报告。
 
-- 只动镜像 → 源目录始终不变 → 早先产生的加密原始快照**仍然有效，无需重跑**。
+- 只动**工作副本** → 真源始终不变，脱敏结果可随时重算。
 - 未映射（token 不在 bw-items 里）会计数提示，便于排查漏导入。
 
 ## 7. 误报治理优先级

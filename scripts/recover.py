@@ -43,10 +43,14 @@ import collections
 import json
 import os
 import re
+import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sanitize_lib import TOKEN_RX, iter_files, read_text  # noqa: E402
+from sanitize_lib import (  # noqa: E402
+    TOKEN_RX, iter_files, read_text, is_text_file,
+    GENERATED_DIRS, RUNTIME_DIRS, GENERATED_NAMES,
+)
 import paths  # noqa: E402
 
 
@@ -138,12 +142,11 @@ def main() -> int:
     args = ap.parse_args()
 
     root = paths.resolve_data_root(args.data_root)
-    mirror = args.mirror or paths.default_mirror(root)
-    if not mirror or not os.path.isdir(mirror):
-        print("缺镜像目录：给 --mirror，或在 <data-root>/workspace.json 配置 mirror",
-              file=sys.stderr)
+    mirror = args.mirror or paths.workspace_mirror(root)
+    if not os.path.isdir(mirror):
+        print(f"镜像目录不存在：{mirror}", file=sys.stderr)
         return 2
-    source = args.source or paths.default_source(root)
+    source = args.source or paths.workspace_source(root)
     ws_name = paths.load_workspace(root).get("name") or "notes"
     outdir = args.out or os.path.join(root, "recovered", ws_name)
 
@@ -229,7 +232,25 @@ def main() -> int:
             with open(dst, "w", encoding="utf-8", newline="") as fh:
                 fh.write(text)
             copied += 1
-        print(f"\n另复制未含占位符的文件 {copied} 个")
+        # 二进制文件（脱敏从不改动）：原样拷回，保证恢复树与镜像一致
+        copied_bin = 0
+        for dirpath, dirnames, filenames in os.walk(mirror):
+            dirnames[:] = [d for d in dirnames
+                           if d not in GENERATED_DIRS and d not in RUNTIME_DIRS]
+            for fn in filenames:
+                if fn in GENERATED_NAMES:
+                    continue
+                p = os.path.join(dirpath, fn)
+                if is_text_file(p):
+                    continue
+                rel = os.path.relpath(p, mirror)
+                if rel in changed_rels:
+                    continue
+                dst = os.path.join(outdir, rel)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(p, dst)
+                copied_bin += 1
+        print(f"\n另复制未含占位符的文本文件 {copied} 个、二进制文件 {copied_bin} 个")
 
     print("已重建 →", mirror if args.in_place else outdir)
     if args.in_place:

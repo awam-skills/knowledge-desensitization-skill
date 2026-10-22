@@ -48,8 +48,15 @@ EXCLUDED_ROOT_FILES = {
 ASSET_DIRS = {"assets"}
 
 
-def classify(rel: str) -> str:
-    """返回 'note' | 'asset' | 'skip'。"""
+def classify(rel: str, note_dirs: set[str] | None = None,
+             unknown_as_note: bool = False) -> str:
+    """返回 'note' | 'asset' | 'skip'。
+
+    note_dirs        笔记目录名集合；缺省 NOTE_DIRS（journals/pages）。
+    unknown_as_note  未归类目录是否按笔记处理（非 Logseq 源用 --all-text 打开）。
+    """
+    nd = NOTE_DIRS if note_dirs is None else note_dirs
+    default_kind = "note" if unknown_as_note else "skip"
     parts = rel.replace("\\", "/").split("/")
     head = parts[0]
     if len(parts) == 1:
@@ -58,11 +65,11 @@ def classify(rel: str) -> str:
         return "note"
     if head in GENERATED_DIRS or head in RUNTIME_DIRS:
         return "skip"
-    if head in NOTE_DIRS:
+    if head in nd:
         return "note"
     if head in ASSET_DIRS:
         return "asset"
-    return "skip"
+    return default_kind
 
 
 def human_size(n: int) -> str:
@@ -101,15 +108,25 @@ def main() -> int:
     ap.add_argument("--apply", action="store_true", help="真正写盘（默认 dry-run）")
     ap.add_argument("--with-assets", action="store_true",
                     help="连同 assets/ 附件一起复制（默认不纳入：只处理笔记）")
+    ap.add_argument("--in-place", action="store_true",
+                    help="就地脱敏：直接覆写 --root（源即工作副本）；与 --out 同路径时自动启用")
+    ap.add_argument("--note-dirs", default=None,
+                    help="笔记目录名（逗号分隔）；缺省 journals,pages。可来自源配置 sanitize.note_dirs")
+    ap.add_argument("--all-text", action="store_true",
+                    help="把所有文本文件都当笔记处理（非 Logseq 源）")
     args = ap.parse_args()
 
     root = paths.resolve_data_root(args.data_root)
-    source_root = args.root or paths.default_source(root)
-    mirror_root = args.out or paths.default_mirror(root)
+    source_root = args.root or paths.workspace_source(root)
     if not source_root:
-        ap.error("缺源目录：给 --root，或在 <data-root>/workspace.json 配置 source")
-    if not mirror_root:
-        ap.error("缺镜像目录：给 --out，或在 <data-root>/workspace.json 配置 mirror")
+        ap.error("缺源目录：给 --root，或在 workspace.json 配置 source（先跑 guide.py）")
+    mirror_root = args.out or paths.workspace_mirror(root)
+
+    note_dirs = None
+    if args.note_dirs:
+        note_dirs = {x.strip() for x in args.note_dirs.split(",") if x.strip()}
+    in_place = args.in_place or (
+        os.path.abspath(source_root) == os.path.abspath(mirror_root))
     rules_path = args.rules or os.path.join(root, "config", "rules.json")
     exclude_path = args.exclude_config or os.path.join(root, "config", "exclude.json")
 
@@ -132,11 +149,13 @@ def main() -> int:
             if path_excluded(rel, excludes):
                 n_skip += 1
                 continue
-            kind = classify(rel)
+            kind = classify(rel, note_dirs, unknown_as_note=args.all_text)
+            if args.all_text and kind == "asset":
+                kind = "note"
             if kind == "skip":
                 n_skip += 1
                 continue
-            dst = os.path.join(mirror_root, rel)
+            dst = src if in_place else os.path.join(mirror_root, rel)
 
             # 附件目录：默认不纳入（用户 2026-10-18 决策）。
             # 历史原因：assets/ 内存在 .txt/.json 等文本，扫描会命中高熵串。
@@ -147,10 +166,11 @@ def main() -> int:
 
             text = read_text(src)
             if text is None:
-                # 真二进制或非 UTF-8：原样复制，避免损坏
+                # 真二进制或非 UTF-8：原样保留/复制，避免损坏
                 n_asset += 1
                 n_bytes += os.path.getsize(src)
-                applied.append((src, dst, "asset", "", None))
+                if not in_place:
+                    applied.append((src, dst, "asset", "", None))
                 continue
 
             n_note += 1
@@ -203,6 +223,7 @@ def main() -> int:
         "root": source_root,
         "out": mirror_root,
         "apply": args.apply,
+        "in_place": in_place,
         "with_assets": args.with_assets,
         "exclude_patterns": excludes,
         "notes_processed": n_note,
@@ -231,7 +252,7 @@ def main() -> int:
             new_text = item[4]
             with open(dst, "w", encoding="utf-8", newline="") as fh:
                 fh.write(new_text)
-        else:
+        elif not in_place:
             shutil.copy2(src, dst)
         try:
             st = os.stat(src)

@@ -16,7 +16,7 @@ found=0
 check() {
     # $1 = 类型名   $2 = ERE 正则
     hits=$(git grep --cached -n -I -E -e "$2" -- . \
-             ':(exclude)vault' ':(exclude)sanitized' ':(exclude)reports' \
+             ':(exclude).km' ':(exclude)vault' ':(exclude)reports' \
              2>/dev/null | sed 's/:[^:]*$//' | tr '\n' '|')
     if [ -n "$hits" ]; then
         echo "  [$1] $hits" >&2
@@ -39,10 +39,10 @@ if [ "$found" = "1" ]; then
         echo "✖ pre-commit 拦截：暂存区检测到疑似明文凭据（内容已隐藏）"
         echo ""
         echo "处理方式："
-        echo "  1) 正式脱敏  : python scripts/sanitize.py --data-root <root> --root <src> --out <mirror> --apply"
-        echo "  2) 凭据入库  : pwsh -File scripts/bitwarden-import.ps1 -DataRoot <root>"
-        echo "  3) 确认误报  : git commit --no-verify，并回头补 <root>/config/rules.json 规则"
-        echo "  4) 若误把运行数据（vault/sanitized/reports）纳入暂存，请先从索引移除"
+        echo "  1) 正式脱敏  : python scripts/pipeline.py --id <源id> --apply"
+        echo "  2) 凭据入库  : pwsh -File scripts/bitwarden-import.ps1 -DataRoot <数据根>/.km/<源id>"
+        echo "  3) 确认误报  : git commit --no-verify，并回头补 <秘密材料目录>/config/rules.json 规则"
+        echo "  4) 若误把运行数据（.km / vault / reports）纳入暂存，请先从索引移除"
         echo ""
     } >&2
     exit 1

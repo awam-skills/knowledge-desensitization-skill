@@ -121,10 +121,9 @@ def cmd_apply(args) -> int:
         print("该 token 没有存原文（可能来自旧版规则），无法还原。")
         return 1
 
-    mirror = args.mirror or paths.default_mirror(args._root)
-    if not mirror:
-        print("缺镜像目录：给 --mirror，或在 <data-root>/workspace.json 配置 mirror",
-              file=sys.stderr)
+    mirror = args.mirror or paths.workspace_mirror(args._root)
+    if not os.path.isdir(mirror):
+        print(f"镜像目录不存在：{mirror}", file=sys.stderr)
         return 2
     targets = []
     for o in meta.get("occurrences", []):

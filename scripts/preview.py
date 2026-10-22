@@ -39,9 +39,9 @@ def main() -> int:
     args = ap.parse_args()
 
     root = paths.resolve_data_root(args.data_root)
-    source_root = args.root or paths.default_source(root)
+    source_root = args.root or paths.workspace_source(root)
     if not source_root:
-        ap.error("缺源目录：给 --root，或在 <data-root>/workspace.json 配置 source")
+        ap.error("缺源目录：给 --root，或在 workspace.json 配置 source（先跑 guide.py）")
     ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     out_path = args.out or os.path.join(root, "vault", "preview", f"preview-{ts}.html")
     rules_path = args.rules or os.path.join(root, "config", "rules.json")

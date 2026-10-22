@@ -66,13 +66,13 @@ workspace.json
 
 # 运行数据根（若与技能仓同处一棵树）
 /vault/
-/sanitized/
+/.km/
 /reports/
 /storage/
 
-# 保险库：私钥 / salt / 映射表 / 原始加密档 / 上下文预览（全部含敏感信息）
+# 秘密材料目录：映射表 / salt / 预览（全部含敏感信息），永不入库
+.km/
 vault/
-*.age
 
 # 明文凭据清单（L0 字面量）：绝不入库
 config/literals.json
@@ -85,13 +85,31 @@ bw-import-*.json
 bw-items.json
 bw-promoted-*.json
 
-# 脱敏镜像与报告（按常见命名兜底）
-sanitized/
+# 秘密材料与报告（按常见命名兜底）
+.km/
 reports/
 
 # 本地临时测试工作区
-.kdtest-*/
-.kdtest*/
+.km-*/
+.km-verify*/
 
 # Agent 工作区记忆（本机工作笔记，不是技能内容）
 .workbuddy/
+debug.log
+coding_memory/
+.agent_history/
+
+# Agent/OfficeAce 运行时工作区（本机 agent 家目录产物，不是技能内容）
+.agent_history/
+.office-claw
+AGENT.md
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+USER.md
+agents/
+context/
+memory/
+messages/
+skills/
+todo/

@@ -1,0 +1,49 @@
+# 知识库脱敏 · 全局设置模板（settings.example.yaml）
+#
+# 用途：复制为 <KM_CONFIG_HOME>/settings.yaml 后按需修改。
+#   <KM_CONFIG_HOME> = %USERPROFILE%\.knowledge-manager-skills（可用 env 覆盖）
+# 本文件只是模板，不会被脚本直接读取。
+#
+# 说明：本文件**不进 Git**（该配置根本身不是仓库）。
+
+version: 1
+
+# 数据根：运行产物根。其下按「源」分目录：
+#   <data_root>/<id>/        工作副本（就地脱敏；建议上传网盘 / 私有 Git）
+#   <data_root>/.km/<id>/    秘密材料与运行态（永不外传）
+# 无默认值，由 guide.py 在首次配置时确定（或在对话中更新）。
+data_root: null
+
+# 还原材料的「单独备份目录」：materials.py 落盘处。
+# 强烈建议指向**私密离线**介质（U 盘 / 密码管理器 / 保险柜）。
+private_backup_dir: null
+
+# 临时工作区根（处理"其他数据"与脱敏过程临时文件；用完即弃）。
+tmp_root: null
+
+defaults:
+  sync:
+    # 源中删除的文件如何处理：ask（默认，只列不删，批量询问）| keep | remove（软移）
+    on_deleted: ask
+    # 同步时排除的 glob（相对真源）。
+    exclude:
+      - ".git/**"
+      - ".git"
+      - ".obsidian/**"
+      - ".obsidian"
+      - "node_modules/**"
+      - "node_modules"
+      - "__pycache__/**"
+      - "__pycache__"
+  sanitize:
+    # 是否连附件一起处理（默认否：只处理笔记）。
+    include_assets: false
+    # 笔记目录名（Logseq 默认 journals/pages）。
+    note_dirs:
+      - journals
+      - pages
+    # 非 Logseq 源：把所有文本文件都当笔记（等价 --all-text）。
+    all_text: false
+  backup:
+    # 是否在流程末尾打印「备份建议」（技能只给建议，不代上传/入 Git）。
+    advise: true

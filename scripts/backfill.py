@@ -46,11 +46,7 @@ def main() -> int:
     args = ap.parse_args()
 
     root = paths.resolve_data_root(args.data_root)
-    mirror = args.mirror or paths.default_mirror(root)
-    if not mirror:
-        print("缺镜像目录：给 --mirror，或在 <data-root>/workspace.json 配置 mirror",
-              file=sys.stderr)
-        return 2
+    mirror = args.mirror or paths.workspace_mirror(root)
     items_path = args.items or os.path.join(paths.map_dir(root), "bw-items.json")
     rules_path = args.rules or os.path.join(paths.config_dir(root), "rules.json")
 

@@ -1,60 +1,110 @@
 # 脚本参数速查
 
-所有脚本都接受（多数为可选）：
+## 两类 `--data-root`（务必分清）
 
-```
---data-root <dir>     数据工作区根；缺省依次取 env DESENS_DATA_ROOT → 脚本上级目录（需带
-                      .desensitization-root 或含 vault/）。
-```
+| 用途 | `--data-root` 指 | 涉及脚本 |
+|---|---|---|
+| **数据根**（其下有 `<id>/` 与 `.km/<id>/`） | 运行产物根 | `entry` / `guide` / `pipeline` / `sync` / `materials` |
+| **秘密材料目录** = `<数据根>/.km/<id>` | 存放 `config/ vault/ reports/` | `sanitize` / `scan` / `preview` / `recover` / `restore` / `whitelist` / `promote` / `backfill` / `add_pair_literal` / `literals_summary` / `probe` |
 
-数据根解析失败时报错并提示先跑 `init_workspace.py`。
+所有脚本都接受 `--data-root`；缺省读环境变量 `KM_DATA_ROOT`（兼容旧名 `DESENS_DATA_ROOT`）。
+解析失败时报错并提示先跑 `guide.py`。
+
+以下用 `<km>` 表示某源的秘密材料目录 `<数据根>/.km/<id>`，`<work>` 表示工作副本 `<数据根>/<id>`。
 
 ---
 
-## init_workspace.py —— 初始化数据工作区
+## entry.py —— 技能统一入口
 
 ```bash
-python scripts/init_workspace.py --data-root <root> --source <只读源> \
-    [--mirror <镜像目录>] [--name notes] [--force]
+python scripts/entry.py                       # 没给目标：列出已保存的源（询问）或要求输入
+python scripts/entry.py --list                # 仅列出已保存的源
+python scripts/entry.py --source <目录> [--data-root <根>] ...   # → 转发 guide.py（新增源）
+python scripts/entry.py --id <源id> [--apply]                    # → 转发 pipeline.py（处理源）
 ```
 
-- 建 `config/ vault/{keys,map,raw,preview} reports/ sanitized/`
+## guide.py —— 引导/配置一个源（技能起点）
+
+```bash
+python scripts/guide.py --source <真源目录> --data-root <数据根> \
+    [--id <源id>] [--name <数据集名>] [--work-dir <工作副本>] \
+    [--private-backup-dir <单独备份目录>] [--on-deleted ask|keep|remove] \
+    [--note-dirs journals,pages] [--all-text] [--exclude <glob,..>] [--dry-run] [--force]
+```
+
+- 写 `<KM_CONFIG_HOME>/sources/<id>.yaml`（`<KM_CONFIG_HOME>` 缺省 `%USERPROFILE%\.knowledge-manager-skills`）
+- 建工作副本 `<数据根>/<id>/` 与秘密材料目录 `<数据根>/.km/<id>/`（`config/ vault/{keys,map,raw,preview} reports/`）
 - 从技能 `config/` 复制 `rules.json`，由 `*.example.json` 生成 `whitelist.json` / `exclude.json`（已存在不覆盖）
 - 写 `workspace.json`、`.desensitization-root`、`.gitignore`（隐私护栏）
-- **不创建** `literals.json`（由你本机填）
+- **不创建** `literals.json`（由本机填）
+- 把 `data_root` / `private_backup_dir` / `tmp_root` 记入 `settings.yaml`
+
+## pipeline.py —— 一个源的全流程
+
+```bash
+python scripts/pipeline.py --id <源id> [--apply] [--data-root <根>] \
+    [--deleted keep|remove] [--with-assets] \
+    [--skip-sync] [--skip-sanitize] [--skip-materials]
+```
+
+顺序固定：`sync → sanitize(就地) → materials → 备份建议`。缺省 dry-run。
+
+## sync.py —— 真源 → 工作副本（增量）
+
+```bash
+python scripts/sync.py --id <源id> [--apply] [--deleted keep|remove] [--json]
+python scripts/sync.py --source <真源目录> --data-root <数据根> [--apply]
+```
+
+- **增量**：`size+mtime` 快判、必要时回退 `sha256`；只拷新增/改动
+- 源中**删除**的文件：默认只列出（`on_deleted=ask`）；`remove` 时**软移**到 `<km>/superseded/<ts>/`
+- 清单落 `<km>/sync-manifest.json`；真源只读
+
+## sanitize.py —— 就地脱敏
+
+```bash
+python scripts/sanitize.py --data-root <km> --root <work> --out <work> --in-place [--apply] \
+    [--note-dirs journals,pages] [--all-text] [--with-assets] [--rules <path>] [--exclude-config <path>]
+```
+
+- 缺省 **dry-run**（只打印计数与路径）
+- `--in-place`（`--root` 与 `--out` 同路径时自动启用）：直接覆写工作副本
+- 产出：`<km>/vault/map/{map.json,bw-import-<ts>.json}`、`<km>/reports/sanitize-<ts>.{md,json}`
+- `--note-dirs` / `--all-text` 控制参与文件（默认 `journals,pages`）
+
+## materials.py —— 还原材料落盘（技能执行）
+
+```bash
+python scripts/materials.py --id <源id> [--apply] [--verify] [--json] \
+    [--dest <单独备份目录>] [--bitwarden-export <文件>]
+```
+
+- 落 `<dest>/<id>/`：`materials/`（C+D 密材）、`meta/`（配置）、`MANIFEST.json`、`RESTORE.md`
+- `<dest>` 缺省读源配置 / `settings.yaml` 的 `private_backup_dir`
+- **C+D 暂不做增量**（每次覆盖写，保证与当前 map/salt 一致）
+- 末尾打印**备份建议**（技能只给建议，不代上传/入 Git）
 
 ## scan.py —— 只读扫描建档
 
 ```bash
-python scripts/scan.py --data-root <root>
+python scripts/scan.py --data-root <km>
 ```
 
-输出按规则 / 按文件的命中计数（**不含明文**）。不写任何文件。
+按规则 / 按文件的命中计数（**不含明文**）。不写任何文件。
 
 ## preview.py —— 上下文预览（含原文）
 
 ```bash
-python scripts/preview.py --data-root <root>
+python scripts/preview.py --data-root <km>
 ```
 
-写 `vault/preview/preview-<ts>.html`（**含原文，绝不发聊天**），供人工判误报。
-
-## sanitize.py —— 执行脱敏
-
-```bash
-python scripts/sanitize.py --data-root <root> [--apply]
-```
-
-- 缺省 **dry-run**（只打印计数与路径）
-- `--apply`：写镜像 `sanitized/<name>/`，生成 `vault/map/{map.json,bw-import-<ts>.json}`、
-  `reports/sanitize-<ts>.{md,json}`
-- `--root` / `--out` 可覆盖 `workspace.json` 里的 source / mirror
+写 `<km>/vault/preview/preview-<ts>.html`（**含原文，绝不发聊天**），供人工判误报。
 
 ## bitwarden-import.ps1 —— 凭据入库（★用户本机）
 
 ```powershell
 $env:BW_SESSION = (bw unlock --raw)          # 在你自己的 pwsh 里先解锁
-pwsh -File scripts/bitwarden-import.ps1 -DataRoot <root> [-Account <email>] [-DryRun]
+pwsh -File scripts/bitwarden-import.ps1 -DataRoot <km> [-Account <email>] [-DryRun]
 ```
 
 参数：`-DataRoot`（必填）、`-Account`、`-BwPath`（默认 `bw`）、`-File`、`-DryRun`。
@@ -66,71 +116,30 @@ pwsh -File scripts/bitwarden-import.ps1 -DataRoot <root> [-Account <email>] [-Dr
 ## backfill.py —— 回填「见保险库：xxx」
 
 ```bash
-python scripts/backfill.py --data-root <root> [--mirror <dir>] [--apply]
+python scripts/backfill.py --data-root <km> [--mirror <dir>] [--apply]
 ```
 
 - 只替换 `credential=true` 的 label；PII 保留
 - `--apply` 才写盘 + 生成 `reports/backfill-<ts>.md`
-- 只动镜像，不动源
+- 只动工作副本，不动真源
 
-## vault.py —— 加密归档
-
-```bash
-python scripts/vault.py --data-root <root> keygen    # 生成 age 密钥对
-python scripts/vault.py --data-root <root> encrypt   # 源目录 → vault/raw/<name>-<ts>.zip.age
-python scripts/vault.py --data-root <root> list
-```
-
-## vault_prune.py —— 派生产物只留最新
+## recover.py —— 用「工作副本 + map.json」重建原文
 
 ```bash
-python scripts/vault_prune.py --data-root <root> [--apply]
-```
-
-对 `vault/raw/*.zip.age`、`vault/map/bw-import-*.json`、`vault/preview/preview-*.html`
-各留最新 1 份，其余**软移** `superseded/`。`--apply` 才执行。
-
-## offline_backup.py —— 分层离线备份（可上云 / 必须离线）
-
-```bash
-python scripts/offline_backup.py --data-root <root> --dest <目录> [--verify] \
-    [--with-literals] [--with-reports] [--bitwarden-export <文件>] \
-    [--tiers cloud,offline,meta] [--dated] [--prune-old]
-```
-
-按敏感度**拆成三个子目录**，直接对应网盘/离线两条去路：
-
-| 子目录 | 级别 | 内容 | 去路 |
-|---|---|---|---|
-| `cloud/` | A+B | 脱敏镜像 `<name>/`、`archive/*.zip.age` | **只有这两类、无其他文件 → 整目录上传网盘/Git** |
-| `offline/` | C+D | `vault/keys`、`vault/map/{salt,map,bw-items}`、（`--with-literals`）`config/literals.json`、（`--bitwarden-export`）`bitwarden/` | **手动拷到离线介质** |
-| `meta/` | — | 配置 `rules/whitelist/exclude`；（`--with-reports`）reports | 非密，**不上云** |
-
-- **默认「固定目录 + 增量更新」**：`<dest>/` 即备份根，直接放 `cloud/ offline/ meta/ superseded/ MANIFEST.json RESTORE.md`；重复执行只写「新增/变化」的文件、未变跳过，源里删掉的旧文件**软移** `superseded/<ts>/`
-- `--dated`：改回旧的日期快照 `<dest>/knowledge-desensitization-backup-<ts>/`（`MANIFEST.json`/`RESTORE.md` 放该目录根）；`--prune-old` 仅在此模式把旧日期目录软移 `superseded/`
-- `--tiers cloud,offline,meta`：只备份指定层（如 `--tiers offline --with-literals` 只备 C+D 到某介质）
-- `--with-reports` 默认关：报告含「敏感文件名索引」，不上云，仅落 `meta/reports/`
-- `--with-literals` 默认关：literals 含明文，落 `offline/`，介质须安全
-- `--verify` 逐文件 sha256 校验
-
-## recover.py —— 用「备份 + 镜像」重建原文
-
-```bash
-python scripts/recover.py --data-root <root> --verify [--source <源>]   # 只校验
-python scripts/recover.py --data-root <root> --apply                    # → recovered/<name>/
-python scripts/recover.py --data-root <root> --apply --in-place         # 就地还原镜像（谨慎）
+python scripts/recover.py --data-root <km> --verify [--source <真源>]   # 只校验
+python scripts/recover.py --data-root <km> --apply                      # → <km>/recovered/<name>/
+python scripts/recover.py --data-root <km> --apply --in-place           # 就地还原工作副本（谨慎）
 ```
 
 - 同时处理 `[REDACTED:...]`（token 形态，用 `map.json`）与「见保险库：xxx」（引用形态，用 `bw-items.json` + `map.json`）
-- `--verify` 只读；给了 `--source` 会与源逐字节比对（期望「不一致 0」）
-- 默认写到独立目录，不覆盖镜像；`--in-place` 才改镜像
+- `--verify` 只读；给了 `--source` 会与真源逐字节比对（期望「不一致 0」）
 - **恢复不依赖 Bitwarden**：`map.json` 是原文真相源
 
 ## restore.py —— 按 token 填回原文
 
 ```bash
-python scripts/restore.py --data-root <root> list
-python scripts/restore.py --data-root <root> apply --token "[REDACTED:...]" --yes
+python scripts/restore.py --data-root <km> list
+python scripts/restore.py --data-root <km> apply --token "[REDACTED:...]" --yes
 ```
 
 `list` 显示占位符形状（掩码）；`apply` 默认 dry-run，须 `--yes`；写审计 `vault/map/restore-log.jsonl`。
@@ -138,24 +147,24 @@ python scripts/restore.py --data-root <root> apply --token "[REDACTED:...]" --ye
 ## whitelist.py —— 永久跳过误报
 
 ```bash
-python scripts/whitelist.py --data-root <root> add "<值>"     # 只存 sha256[:8] 指纹
-python scripts/whitelist.py --data-root <root> list
+python scripts/whitelist.py --data-root <km> add "<值>"     # 只存 sha256[:8] 指纹
+python scripts/whitelist.py --data-root <km> list
 ```
 
 ## promote.py —— 熵兜底提升为 Bitwarden 条目
 
 ```bash
-python scripts/promote.py --data-root <root> new
-python scripts/promote.py --data-root <root> add --fp <8位指纹> [--token "[REDACTED:...]"]
+python scripts/promote.py --data-root <km> new
+python scripts/promote.py --data-root <km> add --fp <8位指纹> [--token "[REDACTED:...]"]
 ```
 
 输出 `vault/map/bw-promoted-<ts>.json`；只读 `map.json`，不打印明文。
 
-## add_pair_literal.py —— 追加组合口令规则
+## add_pair_literal.py —— 追加组合口令字面量
 
 ```bash
-python scripts/add_pair_literal.py --data-root <root> --id <id> \
-    --part-a "<值>" --part-b "<值>" [--label "<标签>"]
+python scripts/add_pair_literal.py --data-root <km> --id <id> \
+    --parts "__PART_A__,__PART_B__" [--label pw] [--pad 32]
 ```
 
 幂等追加到 `config/literals.json`（`require_keyword=false`、`single_mode=anywhere`、
@@ -164,10 +173,19 @@ python scripts/add_pair_literal.py --data-root <root> --id <id> \
 ## literals_summary.py —— 查看 literals 结构（唯一允许）
 
 ```bash
-python scripts/literals_summary.py --data-root <root>
+python scripts/literals_summary.py --data-root <km>
 ```
 
 真实片段只显示 `<len=N>`，占位符原样输出；**不泄露明文**。
+
+## probe.py —— 召回侦察（掩码版）
+
+```bash
+python scripts/probe.py --data-root <km> [--dirs journals,pages] [--root <真源>]
+```
+
+统计「关键词行内候选」与「无关键词高熵候选」，输出 `reports/probe-<ts>.{json,md}`；
+只含 文件:行号 + 长度/熵/字符类 + `sha256[:8]` 指纹，**不含原文**。
 
 ## pre-commit —— 提交前护栏
 

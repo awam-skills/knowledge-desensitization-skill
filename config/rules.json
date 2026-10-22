@@ -14,7 +14,7 @@
   "lessons": [
     "【漏报根因·2026-10-18】sk- 型密钥前面可能粘着厂商标识，如 Context7 的 ctx7sk-<uuid>。",
     "  此时 \\bsk- 与 (?<![A-Za-z0-9_-])sk- 的左边界断言都会失败 → 漏报。",
-    "  由 pre-commit 护栏在 sanitized/pages/env-AI.md:27 抓到，属真实漏报（非误报）。",
+    "  由 pre-commit 护栏在工作副本 pages/env-AI.md:27 抓到，属真实漏报（非误报）。",
     "  修复：新增 llm_api_key_vendor 规则，显式允许「字母1-8位+数字1-4位」的厂商前缀。",
     "【漏报根因2·2026-10-18】只认「厂商格式」不够：本知识库大量凭据是自由格式，",
     "  典型如 pages/账号-<服务>.md、pages/env-<平台>.md 里的「账号：xxx / 密码：yyy / token：zzz」。",

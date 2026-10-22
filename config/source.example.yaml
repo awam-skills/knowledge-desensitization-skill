@@ -1,0 +1,43 @@
+# 知识库脱敏 · 每源配置模板（source.example.yaml）
+#
+# 用途：由 guide.py 自动生成到 <KM_CONFIG_HOME>/sources/<id>.yaml；
+#   本文件只是模板，便于对照字段含义。每源可覆盖全局 settings.yaml 的 defaults。
+#
+# 一个「源」= 一个只读真源 + 一份工作副本 + 一份秘密材料目录。
+
+version: 1
+
+# 源 id（= 数据根 <data_root>/ 下的子目录名；建议由源路径推导，如 logseq-main）
+id: logseq-main
+
+# 数据集名（工作副本工作目录名；缺省 = id）
+name: logseq
+
+# 真源目录（只读；绝不破坏、不上传）
+source: G:\Data\knowledge\logseq\main
+
+# 工作副本目录（就地脱敏对象）。留空则默认 <data_root>/<id>。
+work_dir: null
+
+# —— 可选：以下各项覆盖全局 defaults ——
+sync:
+  # ask（默认）| keep | remove —— 源中删除的文件如何处理
+  on_deleted: ask
+  # 额外排除的 glob（相对真源）；留空表示用全局默认
+  # exclude:
+  #   - ".git/**"
+
+sanitize:
+  # 笔记目录名；非 Logseq 源可设 all_text: true
+  note_dirs:
+    - journals
+    - pages
+  all_text: false
+  include_assets: false
+
+backup:
+  # 本源的「单独备份目录」（覆盖全局 private_backup_dir）；建议离线
+  # private_backup_dir: G:\Knowledge\private\logseq
+
+# 运行态（由脚本维护：last_sync / last_sanitize / last_materials …）；用户不必手改。
+state: {}
