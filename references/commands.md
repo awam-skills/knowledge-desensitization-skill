@@ -217,6 +217,28 @@ python scripts/probe.py --data-root <km> [--dirs journals,pages] [--root <真源
 统计「关键词行内候选」与「无关键词高熵候选」，输出 `reports/probe-<ts>.{json,md}`；
 只含 文件:行号 + 长度/熵/字符类 + `sha256[:8]` 指纹，**不含原文**。
 
+## agent_secret.py —— 供 Agent「使用」密钥的 broker（P0，无值出口）
+
+```bash
+# ★用户本机（一次）：签发 caller token（只显示一次，交给 Agent 存进它自己的密钥库/环境变量）
+python scripts/agent_secret.py enroll --id <源id> --agent <名> --tags llm-key,secret \
+    [--ttl 600] [--max-calls 20] [--deny-labels a,b] [--deny-names glob,..] \
+    [--require-approval glob,..] [--revoke] [--force]
+
+# Agent 侧（--id <源id> 或 --data-root <km>；身份走 --caller-token 或环境变量 AGENT_SECRET_TOKEN）
+python scripts/agent_secret.py whoami  --id <源id>
+python scripts/agent_secret.py list    --id <源id> [--tag <标签>] [--json]
+python scripts/agent_secret.py policy  --id <源id> --action list|run --name "<条目>"
+python scripts/agent_secret.py audit   --id <源id> --tail 50
+```
+
+- **无读值出口**：任何子命令都不打印条目明文（值只在 P1 的 `run` 注入子进程 env）。
+- 身份：`--caller-token` > `AGENT_SECRET_TOKEN`；未注册 = `anonymous`（只读 `public_tags` 元数据、不得 run）。
+- 落盘：`<km>/config/agent-access.json`（全局策略，`default=deny`）、`<km>/config/agents/<名>.json`
+  （只存 token 的 `sha256` + 末 4 位提示）、`<km>/reports/secret-access.jsonl`（审计，不含值）。
+- P1（未实现）：`run --as-env KEY=... -- <cmd>`、`unlock --ttl 600` / `lock`、MCP 薄壳。
+- 详见 `references/agent-access.md`。
+
 ## pre-commit —— 提交前护栏
 
 ```bash

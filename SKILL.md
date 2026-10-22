@@ -202,10 +202,31 @@ python scripts/recover.py --data-root <root> --file <相对路径> --apply  # �
 > **salt / map 丢失 = 工作副本里的 `[REDACTED]` 永不可逆。** 请把 `--dest` 指向私密离线介质。
 > 分层保存与恢复流程见 `references/recovery.md`（密文与密钥分道；副本可上云，钥匙必须离线）。
 
+## 供 Agent 使用密钥（broker，P0）
+
+Agent 要的是「**用**密钥」，不是「读密钥」。本技能因此提供 `scripts/agent_secret.py`：
+**永不提供读值接口**，只把值（P1 起）注入子进程环境变量；身份 = 持有 caller token。
+
+```bash
+# ★用户本机（一次）：签发 token（只显示一次，交给 Agent 存进它自己的密钥库/环境变量）
+python scripts/agent_secret.py enroll --id <源id> --agent claude-code --tags llm-key,secret
+# Agent 侧：只需一个环境变量（任何框架通用）
+#   PowerShell: setx AGENT_SECRET_TOKEN "agt_..."     bash: export AGENT_SECRET_TOKEN=agt_...
+python scripts/agent_secret.py whoami --id <源id>          # 我是谁 / 能看什么
+python scripts/agent_secret.py list   --id <源id>          # 只列元数据（名/标签/凭据位/敏感级），永不含值
+python scripts/agent_secret.py audit  --id <源id> --tail 50
+```
+
+- 策略 `<km>/config/agent-access.json`（`default: deny`）+ 每 caller `<km>/config/agents/<agent>.json`（只存 token 的 `sha256`）；
+  审计 `<km>/reports/secret-access.jsonl`（不含值）。判定与实现细节见 `references/agent-access.md`。
+- P1（未实现）：`run`（注入 env + 输出二次脱敏）、`unlock --ttl 600`（本机 10 分钟窗口）、MCP 薄壳。
+
 ## 安全红线（务必遵守）
 
 - **绝不打印 / 外传**：`config/literals.json` 的值、`vault/map/{salt.bin,map.json,bw-items.json}`
   的内容、`BW_SESSION`、Bitwarden 主密码。
+- **Agent 取密钥只走 broker，历史也不得新增「读值」接口**：`agent_secret.py` 无 `get`/`show`/`--print`；
+  值**永不进模型上下文**（P1 只注入子进程 env）；未注册 Agent = `anonymous` = 只能读元数据、不得 `run`。
 - 诊断只输出**掩码**（长度 / 熵 / 字符类 / `sha256[:8]`）；不得用临时 `print` 拼接涉密内容。
 - **Bitwarden 主密码永不索取、永不接触**；登录 / 解锁 / 导入必须用户本机执行。
 - 文件删除只许**软删**（同卷移动归档到 `superseded/`）+ 事后核验，禁止 `rm`/`del`。
@@ -217,5 +238,6 @@ python scripts/recover.py --data-root <root> --file <相对路径> --apply  # �
 - `references/security.md` —— 威胁模型、护栏清单、事故处置
 - `references/recovery.md` —— 恢复流程与分层保存
 - `references/commands.md` —— 每个脚本的参数速查
+- `references/agent-access.md` —— Agent 取用密钥（broker）：红线、命令、策略与审计文件格式
 - `references/improvements.md` —— 待改进项（含「脱敏增量」）
 - `README.md` —— 安装、快速上手、发布前检查
