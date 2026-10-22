@@ -29,7 +29,7 @@
 
 ### 4.1 `.gitignore`（源头）
 
-落在**秘密材料目录** `<data_root>/.km/<id>/.gitignore`：拦截 `vault/`、`reports/`、
+落在**秘密材料目录** `<秘密材料根>/<id>/.gitignore`：拦截 `vault/`、`reports/`、
 `workspace.json`、`.desensitization-root`、`config/literals.json{,.bak-*}`、`bw-*.json`。
 工作副本（可上云）与之物理分离。
 

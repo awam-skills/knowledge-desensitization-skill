@@ -4,13 +4,16 @@
 
 | 用途 | `--data-root` 指 | 涉及脚本 |
 |---|---|---|
-| **数据根**（其下有 `<id>/` 与 `.km/<id>/`） | 运行产物根 | `entry` / `guide` / `pipeline` / `sync` / `materials` |
-| **秘密材料目录** = `<数据根>/.km/<id>` | 存放 `config/ vault/ reports/` | `sanitize` / `scan` / `preview` / `recover` / `restore` / `whitelist` / `promote` / `backfill` / `add_pair_literal` / `literals_summary` / `probe` |
+| **数据根**（其下有 `<id>/` 工作副本） | 运行产物根 | `entry` / `guide` / `pipeline` / `sync` / `materials` |
+| **秘密材料目录** = `<秘密材料根>/<id>` | 存放 `config/ vault/ reports/` | `sanitize` / `scan` / `preview` / `recover` / `restore` / `whitelist` / `promote` / `backfill` / `add_pair_literal` / `literals_summary` / `probe` |
+
+> **秘密材料根**缺省 = **`<技能目录>/.km`**（可被 `settings.secrets_root` / 源配置 `secrets_root` / `--secrets-root` 覆盖；永不入 Git）。
+> **临时工作区**缺省 = **`<技能目录>/.tmp`**（可被 `settings.tmp_root` / `--tmp-root` 覆盖）。
 
 所有脚本都接受 `--data-root`；缺省读环境变量 `KM_DATA_ROOT`（兼容旧名 `DESENS_DATA_ROOT`）。
 解析失败时报错并提示先跑 `guide.py`。
 
-以下用 `<km>` 表示某源的秘密材料目录 `<数据根>/.km/<id>`，`<work>` 表示工作副本 `<数据根>/<id>`。
+以下用 `<km>` 表示某源的秘密材料目录 `<秘密材料根>/<id>`，`<work>` 表示工作副本 `<数据根>/<id>`。
 
 ---
 
@@ -33,7 +36,7 @@ python scripts/guide.py --source <真源目录> --data-root <数据根> \
 ```
 
 - 写 `<KM_CONFIG_HOME>/sources/<id>.yaml`（`<KM_CONFIG_HOME>` 缺省 `%USERPROFILE%\.knowledge-manager-skills`）
-- 建工作副本 `<数据根>/<id>/` 与秘密材料目录 `<数据根>/.km/<id>/`（`config/ vault/{keys,map,raw,preview} reports/`）
+- 建工作副本 `<数据根>/<id>/` 与秘密材料目录 `<秘密材料根>/<id>/`（`config/ vault/{keys,map,raw,preview} reports/`）
 - 从技能 `config/` 复制 `rules.json`，由 `*.example.json` 生成 `whitelist.json` / `exclude.json`（已存在不覆盖）
 - 写 `workspace.json`、`.desensitization-root`、`.gitignore`（隐私护栏）
 - **不创建** `literals.json`（由本机填）

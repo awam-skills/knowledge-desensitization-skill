@@ -3,7 +3,9 @@
 ## 1. 「工作副本 + map.json」能恢复到什么程度？
 
 **能。** 恢复不依赖 Bitwarden。真正的「原文真相源」是
-`<数据根>/.km/<id>/vault/map/map.json`（token → 原值），它在还原材料（C+D）的**必须件**里。
+`<秘密材料根>/<id>/vault/map/map.json`（token → 原值），它在还原材料（C+D）的**必须件**里。
+
+> `<秘密材料根>` 缺省 = **`<技能目录>/.km`**（可被 `settings.secrets_root` / 源配置 / `--secrets-root` 覆盖；永不入 Git）。
 
 | 你手里有的东西 | 能恢复出什么 |
 |---|---|
@@ -18,15 +20,15 @@
 ### 一键校验（推荐每次脱敏/材料落盘后都跑）
 
 ```bash
-python scripts/recover.py --data-root <数据根>/.km/<id> --verify --source <真源目录>
+python scripts/recover.py --data-root <秘密材料根>/<id> --verify --source <真源目录>
 # 期望输出：源比对 一致 N / 不一致 0
 ```
 
 ### 真正重建
 
 ```bash
-python scripts/recover.py --data-root <数据根>/.km/<id> --apply             # → <km>/recovered/<name>/
-python scripts/recover.py --data-root <数据根>/.km/<id> --apply --in-place  # 就地还原工作副本（谨慎）
+python scripts/recover.py --data-root <秘密材料根>/<id> --apply             # → <km>/recovered/<name>/
+python scripts/recover.py --data-root <秘密材料根>/<id> --apply --in-place  # 就地还原工作副本（谨慎）
 ```
 
 `recover.py` 同时处理两种形态，默认写到**独立目录**（不覆盖工作副本——工作副本是对外分享物，
@@ -38,9 +40,9 @@ python scripts/recover.py --data-root <数据根>/.km/<id> --apply --in-place  #
 
 ```bash
 # 只看能不能还原（不写盘）
-python scripts/recover.py --data-root <数据根>/.km/<id> --file pages/env-AI.md --verify [--source <真源>]
+python scripts/recover.py --data-root <秘密材料根>/<id> --file pages/env-AI.md --verify [--source <真源>]
 # 真正写出（默认落 <km>/recovered/<name>/ 下的同名相对位置；也可 --out 指定目录）
-python scripts/recover.py --data-root <数据根>/.km/<id> --file pages/env-AI.md --apply --out <目标目录>
+python scripts/recover.py --data-root <秘密材料根>/<id> --file pages/env-AI.md --apply --out <目标目录>
 ```
 
 - 单文件恢复与全量恢复**共用同一套还原逻辑**（token 形态 + 引用形态），校验口径一致。

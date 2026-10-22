@@ -110,7 +110,7 @@ def main() -> int:
               file=sys.stderr)
         return 2
     data_root = os.path.abspath(data_root)
-    sec = paths.secret_dir(data_root, args.id)
+    sec = paths.secret_dir(args.id, cfg.get("secrets_root"))
     work = paths.work_dir(data_root, args.id, cfg.get("work_dir"))
     dest_base = os.path.abspath(args.dest) if args.dest else cfg.get("private_backup_dir")
     if not dest_base:

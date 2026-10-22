@@ -14,7 +14,8 @@
         settings.yaml                全局默认（data_root / private_backup_dir / …）
         sources/<id>.yaml            本源配置（真源 / 工作副本 / 覆盖项）
     <data_root>/<id>/                工作副本（就地脱敏；建议上云）
-    <data_root>/.km/<id>/            秘密材料与运行态（永不外传）
+    <secrets_root>/<id>/             秘密材料与运行态（永不外传）
+                                     缺省 <技能目录>/.km/<id>（可用 --secrets-root 覆盖）
         .desensitization-root  workspace.json  .gitignore
         config/{rules.json,whitelist.json,exclude.json,literals.example.json}
         vault/{keys,map,preview}  reports/
@@ -95,7 +96,8 @@ def main() -> int:
     ap.add_argument("--note-dirs", default=None, help="笔记目录名（逗号分隔）；缺省 journals,pages")
     ap.add_argument("--all-text", action="store_true", help="把所有文本文件都当笔记（非 Logseq 源）")
     ap.add_argument("--exclude", default=None, help="同步额外排除 glob（逗号分隔）")
-    ap.add_argument("--tmp-root", help="临时工作区根")
+    ap.add_argument("--secrets-root", help="秘密材料根；缺省 <技能目录>/.km（永不外传）")
+    ap.add_argument("--tmp-root", help="临时工作区根；缺省 <技能目录>/.tmp")
     ap.add_argument("--dry-run", action="store_true", help="只打印，不写盘")
     ap.add_argument("--force", action="store_true", help="覆盖已存在的源配置")
     args = ap.parse_args()
@@ -112,6 +114,8 @@ def main() -> int:
     private_backup = args.private_backup_dir or settings.get("private_backup_dir")
     tmp_root = args.tmp_root or settings.get("tmp_root")   # 显式指定（命令行 / 已存 settings）
     tmp_effective = tmp_root or paths.default_tmp_root()   # 缺省：<技能目录>/.tmp
+    secrets_root = (args.secrets_root or settings.get("secrets_root")
+                    or paths.default_secrets_root())       # 缺省：<技能目录>/.km
 
     if not data_root:
         print("缺数据根（无默认值）。请给 --data-root <目录>（会在首次配置时确定）。",
@@ -120,7 +124,7 @@ def main() -> int:
     data_root = os.path.abspath(data_root)
 
     work = paths.work_dir(data_root, sid, args.work_dir)
-    sec = paths.secret_dir(data_root, sid)
+    sec = paths.secret_dir(sid, secrets_root)
     cfg_path = paths.source_cfg_path(sid)
 
     if os.path.exists(cfg_path) and not args.force:
@@ -211,6 +215,8 @@ def main() -> int:
     patch = {"data_root": data_root}
     if private_backup:
         patch["private_backup_dir"] = private_backup
+    if args.secrets_root:
+        patch["secrets_root"] = args.secrets_root
     if args.tmp_root:
         patch["tmp_root"] = args.tmp_root
     km_config.update_settings(patch)

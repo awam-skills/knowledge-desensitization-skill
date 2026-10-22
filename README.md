@@ -28,6 +28,12 @@
 
 ## 2. 快速上手
 
+> **目录约定（默认值都有，可覆盖）**
+> - **工作副本** `<data_root>/<id>/`：脱敏产物，可上云 / 入私有 Git。`data_root` **无默认值**，须显式给或由 `guide.py` 首次配置确定。
+> - **秘密材料根**：缺省 **`<技能目录>/.km`**（`<秘密材料根>/<id>/` 存 vault/config/reports；含明文钥匙，**永不外传**）。可用 `settings.secrets_root` / 源配置 / `--secrets-root` 覆盖。
+> - **临时工作区**：缺省 **`<技能目录>/.tmp`**（用完即弃）。可用 `settings.tmp_root` / `--tmp-root` 覆盖。
+> - 后两者都在技能目录下、已被 `.gitignore` 忽略。
+
 ```bash
 # 2.1 引导一个源（写 <KM_CONFIG_HOME>/sources/<id>.yaml 与 settings.yaml）
 #     <KM_CONFIG_HOME> = %USERPROFILE%\.knowledge-manager-skills（可用 env 覆盖）
@@ -44,15 +50,15 @@ python scripts/pipeline.py --id logseq-main --apply
 #   → 末尾打印备份建议（工作副本→网盘/私有 Git；材料→私密离线）
 
 # 2.3（可选）明文口令清单：本机复制并填写（绝不外传）
-#   cp <data_root>/.km/<id>/config/literals.example.json .../config/literals.json
+#   cp <秘密材料根>/<id>/config/literals.example.json .../config/literals.json
 
 # 2.4（可选）凭据入 Bitwarden（★你自己终端）
 #   $env:BW_SESSION = (bw unlock --raw)
-#   pwsh -File scripts/bitwarden-import.ps1 -DataRoot <data_root>/.km/<id>
-python scripts/backfill.py --data-root <data_root>/.km/<id> --apply   # 回填「见保险库：xxx」
+#   pwsh -File scripts/bitwarden-import.ps1 -DataRoot <秘密材料根>/<id>
+python scripts/backfill.py --data-root <秘密材料根>/<id> --apply   # 回填「见保险库：xxx」
 
 # 2.5（可选）可逆性校验（对真源逐字节比对，期望「不一致 0」）
-python scripts/recover.py --data-root <data_root>/.km/<id> --verify --source G:/Data/knowledge/logseq/main
+python scripts/recover.py --data-root <秘密材料根>/<id> --verify --source G:/Data/knowledge/logseq/main
 ```
 
 每一步都只打印**计数与路径**，不打印任何凭据值。
@@ -127,7 +133,7 @@ chmod +x .git/hooks/pre-commit
 `$env:BW_SESSION = (bw unlock --raw)`，确认 `bw status` 为 `unlocked`，再跑导入脚本（脚本会复用会话）。
 
 **Q：镜像里的 `[REDACTED:...]` 还能还原吗？**
-能，只要 `<data_root>/.km/<id>/vault/map/{map.json,salt.bin}` 在。用 `scripts/recover.py`
+能，只要 `<秘密材料根>/<id>/vault/map/{map.json,salt.bin}` 在。用 `scripts/recover.py`
 拿「工作副本 + `map.json`」整体重建，或用 `scripts/restore.py` 按单个 token 填回。
 **salt / map 丢了就永远还原不了** —— 所以务必用 `materials.py`
 把还原材料落盘到**单独备份目录**并离线多份。

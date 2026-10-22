@@ -10,7 +10,7 @@
 - 无「只处理本次改动文件」的能力；靠**幂等**（`TOKEN_RX` 保护区 + 迭代到不动点 + 稳定 HMAC token）
   保证「重复全量跑」不会产生二次污染 —— 所以现在跑全量是**安全但不省时**。
 - **增量只存在于 `sync.py` 层**（真源 → 工作副本）：`size+mtime` 快判、必要时回退 `sha256`，
-  只拷新增/改动文件；清单落 `<数据根>/.km/<id>/sync-manifest.json`。
+  只拷新增/改动文件；清单落 `<秘密材料根>/<id>/sync-manifest.json`。
 
 **为什么暂不做**（用户 2026-10-22 定稿：待改进，暂时不做）
 
@@ -22,7 +22,7 @@
 
 **改进方向**（若日后要做）
 
-- 复用 `sync-manifest.json` 的 sha256，建立 `<数据根>/.km/<id>/sanitize-state.json`（`rel → {sha256, mtime}`）。
+- 复用 `sync-manifest.json` 的 sha256，建立 `<秘密材料根>/<id>/sanitize-state.json`（`rel → {sha256, mtime}`）。
 - 增量模式：仅对「相对上次脱敏 新增/改动」的文件重跑；**规则文件**（`rules.json`、`literals.json`、
   `whitelist.json`、`exclude.json`）任一变化即**强制全量**。
 - 保留 `--full` 随时全量重算；`--verify` 校验「增量结果 == 全量结果」。

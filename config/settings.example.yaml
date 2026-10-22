@@ -8,11 +8,15 @@
 
 version: 1
 
-# 数据根：运行产物根。其下按「源」分目录：
+# 数据根：运行产物根（只放工作副本）。其下按「源」分目录：
 #   <data_root>/<id>/        工作副本（就地脱敏；建议上传网盘 / 私有 Git）
-#   <data_root>/.km/<id>/    秘密材料与运行态（永不外传）
 # 无默认值，由 guide.py 在首次配置时确定（或在对话中更新）。
 data_root: null
+
+# 秘密材料根：存放所有源的秘密材料与运行态（`<secrets_root>/<id>/`：vault/ config/ reports/）。
+# 留 null = 用默认值：**技能目录下的 .km**（<技能目录>/.km，已被 .gitignore 忽略）。
+# ⚠️ 含明文钥匙（map.json/salt/literals），永不外传；想挪到别处（如离线盘）才写绝对路径。
+secrets_root: null
 
 # 还原材料的「单独备份目录」：materials.py 落盘处。
 # 强烈建议指向**私密离线**介质（U 盘 / 密码管理器 / 保险柜）。

@@ -69,6 +69,7 @@ def main() -> int:
     ap.add_argument("--note-dirs")
     ap.add_argument("--all-text", action="store_true")
     ap.add_argument("--exclude")
+    ap.add_argument("--secrets-root")
     ap.add_argument("--tmp-root")
     ap.add_argument("--force", action="store_true")
     # 传给 pipeline.py（处理源）
@@ -88,7 +89,7 @@ def main() -> int:
     if args.source:
         argv = ["--source", args.source]
         for flag in ("data-root", "name", "work-dir", "private-backup-dir",
-                     "on-deleted", "note-dirs", "exclude", "tmp-root"):
+                     "on-deleted", "note-dirs", "exclude", "secrets-root", "tmp-root"):
             v = getattr(args, flag.replace("-", "_"))
             if v:
                 argv += [f"--{flag}", v]

@@ -6,15 +6,23 @@
       KM_CONFIG_HOME（env）或 %USERPROFILE%\\.knowledge-manager-skills
       ├─ settings.yaml           全局默认
       └─ sources/<id>.yaml       每个真源一份（可覆盖全局）
-- 数据根（data_root）：运行产物根，可配；其下按「源」分目录：
+- 数据根（data_root）：运行产物根，可配；工作副本按「源」分目录：
       <data_root>/<id>/          工作副本（就地脱敏；建议上传网盘 / 私有 Git）
-      <data_root>/.km/<id>/      秘密材料与运行态（vault/ config/ state；永不外传）
+- 秘密材料与临时工作区：**默认都落在技能目录下**（可被配置覆盖；永不入 Git）：
+      <技能目录>/.km/<id>/       秘密材料与运行态（vault/ config/ state；永不外传）
+      <技能目录>/.tmp/           临时工作区（处理「其他数据」；用完即弃）
 
 一个「源」= 一个只读真源 + 一份工作副本 + 一份秘密材料目录：
 - 真源：只读，不破坏、不上传。
 - 工作副本：脱敏「就地」对象；输入与输出（已脱敏）是同一份。
-- 秘密材料：salt / map / age 私钥 / literals 等，落在 <data_root>/.km/<id>/，
+- 秘密材料：salt / map / age 私钥 / literals 等，默认落在 <技能目录>/.km/<id>/，
   与工作副本物理分开，确保「密文与钥匙分道」——工作副本可上云，秘密材料绝不可。
+
+秘密材料根解析优先级（**有默认值 = <技能目录>/.km**）
+  1) 命令行 --secrets-root <dir>
+  2) 每源配置 sources/<id>.yaml 的 secrets_root
+  3) 用户级 settings.yaml 的 secrets_root
+  4) 默认 <技能目录>/.km
 
 数据根解析优先级（**无默认值**）
   1) 命令行 --data-root <dir>
@@ -51,6 +59,11 @@ def skill_root() -> str:
 def default_tmp_root() -> str:
     """临时工作区的默认根：<技能目录>/.tmp。"""
     return os.path.join(skill_root(), TMP_DIRNAME)
+
+
+def default_secrets_root() -> str:
+    """秘密材料的默认根：**<技能目录>/.km**（永不外传；可被配置覆盖）。"""
+    return os.path.join(skill_root(), SECRETS_DIRNAME)
 
 # Bitwarden 条目约定（统一命名，避免各脚本写死）：
 #   name   形如 "<ITEM_PREFIX>/<来源> · <摘要>"
@@ -127,9 +140,13 @@ def work_dir(data_root: str, sid: str, override: str | None = None) -> str:
     return os.path.join(data_root, sid)
 
 
-def secret_dir(data_root: str, sid: str) -> str:
-    """秘密材料与运行态目录：<data_root>/.km/<id>（永不外传）。"""
-    return os.path.join(data_root, SECRETS_DIRNAME, sid)
+def secret_dir(sid: str, secrets_root: str | None = None) -> str:
+    """某源的秘密材料与运行态目录：<秘密材料根>/<id>（永不外传）。
+
+    秘密材料根缺省 = **<技能目录>/.km**，可被 settings / 每源配置的 secrets_root 覆盖。
+    """
+    root = os.path.abspath(secrets_root or default_secrets_root())
+    return os.path.join(root, sid)
 
 
 # ----------------------------------------------------------------------------

@@ -64,7 +64,7 @@ def main() -> int:
         return 2
     data_root = os.path.abspath(data_root)
     work = paths.work_dir(data_root, args.id, cfg.get("work_dir"))
-    sec = paths.secret_dir(data_root, args.id)
+    sec = paths.secret_dir(args.id, cfg.get("secrets_root"))
 
     print("=" * 66)
     print(f"源 id   : {args.id}（{cfg.get('name')}）  模式：{'APPLY' if args.apply else 'DRY-RUN'}")

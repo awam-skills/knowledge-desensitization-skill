@@ -92,7 +92,7 @@ def main() -> int:
             return 2
         data_root = os.path.abspath(data_root)
         work = paths.work_dir(data_root, args.id, cfg.get("work_dir"))
-        sec = paths.secret_dir(data_root, args.id)
+        sec = paths.secret_dir(args.id, cfg.get("secrets_root"))
         excludes = cfg["sync"]["exclude"]
         on_deleted = args.deleted or cfg["sync"].get("on_deleted", "ask")
     elif args.source:
@@ -103,7 +103,7 @@ def main() -> int:
         sid = km_config.suggest_id(src)
         data_root = os.path.abspath(args.data_root)
         work = paths.work_dir(data_root, sid)
-        sec = paths.secret_dir(data_root, sid)
+        sec = paths.secret_dir(sid, km_config.effective_secrets_root())
         excludes = km_config.load_settings()["defaults"]["sync"]["exclude"]
         on_deleted = args.deleted or "ask"
     else:

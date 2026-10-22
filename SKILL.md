@@ -22,7 +22,7 @@ disable-model-invocation: true
 4. **真源只读 + 就地脱敏**。真源一个字节都不改；脱敏作用在**工作副本**上且**就地写回**
    （输入与输出是同一份）。
 5. **密文与钥匙分道**。工作副本（`<data_root>/<id>/`，可上云/私有 Git）与秘密材料
-   （`<data_root>/.km/<id>/`：salt / map / 密钥 / literals，**永不外传**）**物理分开**。
+   （`<秘密材料根>/<id>/`：salt / map / 密钥 / literals，**永不外传**）**物理分开**。
 6. **技能不代上传**。工作副本与还原材料的去向由用户决定，技能**只给建议**。
 7. **幂等**。占位符是稳定 HMAC token（`[REDACTED:<label>:<hmac8>]`），重复跑不套娃、不漂移。
 8. **绝不外传明文**。任何命令都不把凭据值打印到 stdout / 聊天；诊断一律掩码。
@@ -71,8 +71,8 @@ disable-model-invocation: true
 ```
 <真源>                        # 只读；绝不破坏、不上传
 <data_root>/<id>/             # 工作副本：就地脱敏；输入=输出；可上云 / 私有 Git
-<data_root>/.km/<id>/         # 秘密材料与运行态：config/ vault/ reports/ workspace.json
-                              #   → 永不外传（与工作副本物理分开 = 密文与钥匙分道）
+<秘密材料根>/<id>/         # 秘密材料与运行态：config/ vault/ reports/ workspace.json
+                              #   缺省 <技能目录>/.km/<id>；永不外传（与工作副本物理分开 = 密文与钥匙分道）
 ```
 
 引导一个源（首次配置，写 `sources/<id>.yaml` 与 `settings.yaml`）：
@@ -100,7 +100,7 @@ python scripts/pipeline.py --id <源id> --apply
 # 最后打印**备份建议**（工作副本 → 网盘/私有 Git；材料 → 私密离线）
 ```
 
-分步等价（`<km>` = `<data_root>/.km/<id>`，`<work>` = `<data_root>/<id>`）：
+分步等价（`<km>` = `<秘密材料根>/<id>`，`<work>` = `<data_root>/<id>`）：
 
 ```bash
 python scripts/sync.py      --id <源id> [--apply] [--deleted keep|remove]
@@ -141,7 +141,7 @@ python scripts/backfill.py --data-root <km> --apply        # [REDACTED] → 「�
 
 ## 误报治理
 
-> 下表 `<root>` 指该源的**秘密材料目录** `<data_root>/.km/<id>`
+> 下表 `<root>` 指该源的**秘密材料目录** `<秘密材料根>/<id>`
 > （vault / config / reports 所在处；**永不外传**）。
 
 | 场景 | 手段 |

@@ -9,9 +9,10 @@
 
 全局 <KM_CONFIG_HOME>/settings.yaml
     version: 1
-    data_root: <数据根>              # 运行产物根；缺省留空，由 guide 在首次配置时确定
+    data_root: <数据根>              # 运行产物根（工作副本）；缺省留空，由 guide 在首次配置时确定
+    secrets_root: <目录>             # 秘密材料根；缺省 <技能目录>/.km（永不外传）
     private_backup_dir: <目录>       # 还原材料的单独备份目录（技能执行落盘；建议离线）
-    tmp_root: <目录>                 # 临时工作区根（用完即弃）
+    tmp_root: <目录>                 # 临时工作区根；缺省 <技能目录>/.tmp（用完即弃）
     defaults:
       sync:     { on_deleted: ask, exclude: [".git/**", ".obsidian/**", ...] }
       sanitize: { include_assets: false, note_dirs: [journals, pages] }
@@ -48,6 +49,7 @@ import paths
 DEFAULT_SETTINGS: dict = {
     "version": 1,
     "data_root": None,
+    "secrets_root": None,
     "private_backup_dir": None,
     "tmp_root": None,
     "defaults": {
@@ -167,6 +169,8 @@ def resolve_source(sid: str) -> dict:
         "source": raw.get("source"),
         "work_dir": raw.get("work_dir"),
         "data_root": raw.get("data_root") or settings.get("data_root"),
+        "secrets_root": (raw.get("secrets_root") or settings.get("secrets_root")
+                         or paths.default_secrets_root()),
         "private_backup_dir": (raw.get("backup", {}) or {}).get("private_backup_dir")
                               or settings.get("private_backup_dir"),
         "sync": settings["defaults"]["sync"],
@@ -184,6 +188,12 @@ def save_source(sid: str, cfg: dict) -> None:
     _save_yaml(paths.source_cfg_path(sid), cfg)
 
 
+def effective_secrets_root() -> str:
+    """秘密材料根的**生效值**：settings.secrets_root 优先，否则默认 <技能目录>/.km。"""
+    root = load_settings().get("secrets_root") or paths.default_secrets_root()
+    return os.path.abspath(root)
+
+
 def effective_tmp_root() -> str:
     """临时工作区根的**生效值**：用户 settings.tmp_root 优先，否则默认 <技能目录>/.tmp。
 
@@ -197,7 +207,7 @@ def global_config_dir() -> str:
     """用户级「全局配置」目录（与 settings.yaml 同级，不进 Git、不随技能发布）。
 
     用于存放全局的 rules.json / whitelist.json / exclude.json / literals.json，
-    作为所有源的默认；每源 `<data_root>/.km/<id>/config/` 可覆盖。
+    作为所有源的默认；每源 `<秘密材料根>/<id>/config/` 可覆盖。
     """
     return os.path.join(paths.km_config_home(), "config")
 
