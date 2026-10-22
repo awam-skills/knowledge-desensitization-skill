@@ -38,6 +38,20 @@ MARKER = ".desensitization-root"
 # 秘密材料相对数据根的隐藏目录（工作副本的同级兄弟，绝不随工作副本上传）
 SECRETS_DIRNAME = ".km"
 
+# 临时工作区：处理「其他数据」与脱敏过程临时文件（用完即弃）。
+# **默认落在技能目录下**（<技能目录>/.tmp），永不入 Git；可被用户配置覆盖。
+TMP_DIRNAME = ".tmp"
+
+
+def skill_root() -> str:
+    """本技能包根目录（scripts/ 的上级）。"""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def default_tmp_root() -> str:
+    """临时工作区的默认根：<技能目录>/.tmp。"""
+    return os.path.join(skill_root(), TMP_DIRNAME)
+
 # Bitwarden 条目约定（统一命名，避免各脚本写死）：
 #   name   形如 "<ITEM_PREFIX>/<来源> · <摘要>"
 #   fields 里以 TOKEN_FIELD 记录 token，供 backfill 建立 token→条目 映射

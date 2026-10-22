@@ -19,6 +19,8 @@ data_root: null
 private_backup_dir: null
 
 # 临时工作区根（处理"其他数据"与脱敏过程临时文件；用完即弃）。
+# 留 null = 用默认值：**技能目录下的 .tmp**（<技能目录>/.tmp，已被 .gitignore 忽略）。
+# 想在别处（如数据盘）就用绝对路径覆盖。
 tmp_root: null
 
 defaults:

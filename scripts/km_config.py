@@ -184,6 +184,15 @@ def save_source(sid: str, cfg: dict) -> None:
     _save_yaml(paths.source_cfg_path(sid), cfg)
 
 
+def effective_tmp_root() -> str:
+    """临时工作区根的**生效值**：用户 settings.tmp_root 优先，否则默认 <技能目录>/.tmp。
+
+    目录不存在时按需创建（用完即弃；永不入 Git）。
+    """
+    root = load_settings().get("tmp_root") or paths.default_tmp_root()
+    return os.path.abspath(root)
+
+
 def global_config_dir() -> str:
     """用户级「全局配置」目录（与 settings.yaml 同级，不进 Git、不随技能发布）。
 

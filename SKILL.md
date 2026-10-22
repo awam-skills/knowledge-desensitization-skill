@@ -60,7 +60,7 @@ disable-model-invocation: true
 
 ```
 <KM_CONFIG_HOME>/
-├── settings.yaml            # 全局默认：data_root / private_backup_dir / tmp_root / defaults.*
+├── settings.yaml            # 全局默认：data_root / private_backup_dir / tmp_root（缺省=技能目录下 .tmp）/ defaults.*
 ├── config/                  # ★全局配置：rules.json / whitelist.json / exclude.json / literals.json
 │                            #   作为所有源的默认；新源由 guide.py 自动继承；不进 Git
 └── sources/<id>.yaml        # 每个真源一份（可覆盖全局）

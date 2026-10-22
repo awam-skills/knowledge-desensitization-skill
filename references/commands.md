@@ -38,6 +38,7 @@ python scripts/guide.py --source <真源目录> --data-root <数据根> \
 - 写 `workspace.json`、`.desensitization-root`、`.gitignore`（隐私护栏）
 - **不创建** `literals.json`（由本机填）
 - 把 `data_root` / `private_backup_dir` / `tmp_root` 记入 `settings.yaml`
+  （`tmp_root` 不指定时即为默认值：**技能目录下的 `.tmp/`**，不入 Git）
 
 ## pipeline.py —— 一个源的全流程
 

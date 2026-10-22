@@ -110,7 +110,7 @@ chmod +x .git/hooks/pre-commit
 
 技能仓对外发布前，请逐项确认：
 
-- [ ] `git status` 中没有 `.km/`、`vault/`、`reports/`、`config/literals.json`
+- [ ] `git status` 中没有 `.km/`、`vault/`、`reports/`、`.tmp/`、`config/literals.json`
 - [ ] `config/` 里只有 `*.example.json` 与 `rules.json`（无 `literals.json`）
 - [ ] 全仓无明文凭据：`git grep -n -E 'AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{20,}'` 无值命中
 - [ ] `references/` / `README.md` / `SKILL.md` 未粘任何真实片段

@@ -110,7 +110,8 @@ def main() -> int:
     settings = km_config.load_settings()
     data_root = args.data_root or settings.get("data_root")
     private_backup = args.private_backup_dir or settings.get("private_backup_dir")
-    tmp_root = args.tmp_root or settings.get("tmp_root")
+    tmp_root = args.tmp_root or settings.get("tmp_root")   # 显式指定（命令行 / 已存 settings）
+    tmp_effective = tmp_root or paths.default_tmp_root()   # 缺省：<技能目录>/.tmp
 
     if not data_root:
         print("缺数据根（无默认值）。请给 --data-root <目录>（会在首次配置时确定）。",
@@ -157,7 +158,8 @@ def main() -> int:
         print(f"工作副本   : {work}")
         print(f"秘密材料   : {sec}")
         print(f"单独备份   : {private_backup or '（未指定；建议设置）'}")
-        print(f"临时区     : {tmp_root or '（未指定）'}")
+        print(f"临时区     : {tmp_effective}"
+              + ("" if tmp_root else "（缺省：技能目录下；可用 --tmp-root 覆盖）"))
         print(f"settings   : data_root={data_root}")
         print(f"源配置     : {cfg_path}")
         print("\n源配置内容：")
@@ -168,6 +170,7 @@ def main() -> int:
 
     # ---- 写盘 ----
     os.makedirs(work, exist_ok=True)
+    os.makedirs(tmp_effective, exist_ok=True)   # 默认即在技能目录下「产生」临时工作区
     for sub in ("config", "reports",
                 os.path.join("vault", "keys"), os.path.join("vault", "map"),
                 os.path.join("vault", "preview")):
@@ -208,8 +211,8 @@ def main() -> int:
     patch = {"data_root": data_root}
     if private_backup:
         patch["private_backup_dir"] = private_backup
-    if tmp_root:
-        patch["tmp_root"] = tmp_root
+    if args.tmp_root:
+        patch["tmp_root"] = args.tmp_root
     km_config.update_settings(patch)
 
     print(f"已配置源：{sid}（{name}）")
@@ -217,6 +220,8 @@ def main() -> int:
     print(f"  工作副本   : {work}")
     print(f"  秘密材料   : {sec}")
     print(f"  单独备份   : {private_backup or '（未指定，建议 --private-backup-dir 设一个离线目录）'}")
+    print(f"  临时工作区 : {tmp_effective}"
+          + ("" if tmp_root else "（缺省：技能目录下 .tmp，未入 Git）"))
     print(f"  生成配置   : {', '.join(generated) if generated else '（均已存在）'}")
     print(f"  源配置     : {cfg_path}")
     print("  提示：真实字面量把 config/literals.example.json 复制为 "

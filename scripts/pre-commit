@@ -16,7 +16,7 @@ found=0
 check() {
     # $1 = 类型名   $2 = ERE 正则
     hits=$(git grep --cached -n -I -E -e "$2" -- . \
-             ':(exclude).km' ':(exclude)vault' ':(exclude)reports' \
+             ':(exclude).km' ':(exclude)vault' ':(exclude)reports' ':(exclude).tmp' \
              2>/dev/null | sed 's/:[^:]*$//' | tr '\n' '|')
     if [ -n "$hits" ]; then
         echo "  [$1] $hits" >&2

@@ -46,6 +46,9 @@ Desktop.ini
 output/
 *.xlsx
 
+# 临时工作区（默认落在技能目录下 <技能目录>/.tmp；处理「其他数据」的临时文件，用完即弃）
+.tmp/
+
 # 技能改进时的可恢复基线快照
 .skill-improve-baseline/
 
