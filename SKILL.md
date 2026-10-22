@@ -149,6 +149,10 @@ python scripts/backfill.py --data-root <km> --apply        # [REDACTED] → 「�
 | 某值被误判为凭据，只想「填回原文」 | `python scripts/restore.py --data-root <root> list` → `apply --yes` |
 | 某值**以后永远不该命中** | `python scripts/whitelist.py --data-root <root> add "<值>"`（只存指纹） |
 | 熵兜底命中的确是真密钥，要入 Bitwarden | `python scripts/promote.py --data-root <root> new|add --fp <8位指纹>` |
+| 图片/附件**链接断链**（文件名被 token 化） | 已由**资源路径护栏**根治（脱敏不改资源文件名/目标）；历史损坏用 `recover.py --file <篇> --apply --in-place` 取回原文后重跑 `sanitize.py --apply` |
+
+> **纯 hex 密钥**（`SerpApi Key`、Telegram `api_hash` 等）由 `kw_hex` 规则按**关键词邻域**捕获——L3 熵兜底刻意排除纯 hex，故必须靠关键词补。
+> **`App ID` / `api_id` 是公开标识符，刻意保持明文**，不入规则。
 | 组合口令（A/B/C/D 片段拼装） | `python scripts/add_pair_literal.py --data-root <root> ...` |
 | 只想看 literals 结构、不泄露明文 | `python scripts/literals_summary.py --data-root <root>`（唯一允许的入口） |
 

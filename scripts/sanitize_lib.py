@@ -541,13 +541,54 @@ def _entropy_candidates(rule: Rule, text: str):
 TOKEN_RX = re.compile(r"\[REDACTED:[A-Za-z0-9_\-]+:[0-9a-f]{8}\]")
 
 
+# ----------------------------------------------------------------------------
+# 资源路径保护区（脱敏不改「资源文件名/路径」，避免 markdown 链接断裂）
+# ----------------------------------------------------------------------------
+
+_MD_EMBED_RX = re.compile(r"!?\[\[([^\]\[\n]*)\]")
+# 链接目标：允许文件名里出现一层括号（如 `(Av505310891,P13)`），否则会截断保护区间
+_MD_TARGET_RX = re.compile(r"\]\(((?:[^()\n]|\([^()\n]*\))*)\)")
+# markdown 图片 ALT：`![<文件名.ext>](...)` —— ALT 里若是资源文件名，同样是「资源名」，不脱敏
+_MD_ALT_RX = re.compile(r"!\[([^\]\n]*?\.[A-Za-z0-9]{2,6})\](?=\()")
+_ASSET_PATH_RX = re.compile(r"(?:\.{1,2}/)+assets/[^\s)\]\[]+")
+_ASSET_FILE_RX = re.compile(
+    r"\b[0-9A-Za-z_\-]{12,}\.(?:png|jpe?g|gif|svg|webp|bmp|avif|mp4|mov|webm|mp3|wav|pdf|zip|canvas)\b")
+_URL_USERINFO_RX = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://[^/\s]*@")
+
+
+def resource_spans(text: str) -> list[tuple[int, int]]:
+    """markdown 嵌入名 / 链接目标 / assets 路径的字符区间（脱敏时跳过）。
+
+    为什么：`![[xx.png]]` 与 `](../assets/xx.png)` 里的名字如果被替换，
+    而 `assets/` 本身不参与改名 → 链接必然断裂。
+    远程 URL 也保护；**唯一例外**是 URL 里带用户凭据段（`账号:口令@主机`）——
+    那种 URL 可能藏密钥，仍交给规则扫描。
+    """
+    spans: list[tuple[int, int]] = []
+    for m in _MD_ALT_RX.finditer(text):
+        spans.append(m.span(1))
+    for m in _MD_EMBED_RX.finditer(text):
+        spans.append(m.span(1))
+    for m in _MD_TARGET_RX.finditer(text):
+        if _URL_USERINFO_RX.match(m.group(1).lstrip()):
+            continue   # 带用户凭据段（账号:口令@）的 URL —— 可能藏密钥，不保护
+        spans.append(m.span(1))
+    for m in _ASSET_PATH_RX.finditer(text):
+        spans.append(m.span())
+    for m in _ASSET_FILE_RX.finditer(text):
+        spans.append(m.span())
+    return spans
+
+
 def find_hits(text: str, rules: list[Rule], salt: bytes,
               only_enabled: bool = True) -> list[Hit]:
     """返回去重、去重叠、按位置排序的命中列表。
 
     优先级 = rules 列表顺序（字面量规则在最前）；同规则取最长；再做包含去重。
+    保护区 = 既有占位符（保幂等）+ 资源路径/文件名（防链接断裂）。
     """
     protected = [(m.start(), m.end()) for m in TOKEN_RX.finditer(text)]
+    protected += resource_spans(text)
     raw: list[Hit] = []
     for idx, rule in enumerate(rules):
         if only_enabled and not rule.enabled:

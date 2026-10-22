@@ -179,6 +179,18 @@
       "extract_hint": "兼容旧规则：key=value 形式的密钥赋值（长值，≥12）。新语料优先由 kw_assignment 覆盖。"
     },
     {
+      "name": "kw_hex",
+      "label": "secret-hex",
+      "enabled": true,
+      "credential": true,
+      "mode": "regex",
+      "pattern": "(?:api[\\s_\\-]?hash|appid\\s*hash|app\\s*id\\s*hash|serp[\\s_\\-]?api|api[\\s_\\-]?key|apikey|hash)(?:[^\\n]*\\n){0,2}[^\\n]*?([0-9a-fA-F]{32}|[0-9a-fA-F]{64})",
+      "flags": "i",
+      "replace_group": 1,
+      "validator": "none",
+      "extract_hint": "关键词邻域（可跨 1-2 行）：api_hash / API Key / SerpApi / APPID hash 附近的 32/64 位十六进制密钥。补 L3 漏报——L3 熵兜底显式排除纯 hex，导致 API Key 最常见的纯 hex 形态整体漏网。App ID / api_id 属公开标识符，不在此列（保持明文）。"
+    },
+    {
       "name": "high_entropy_token",
       "label": "entropy",
       "enabled": true,
@@ -208,7 +220,7 @@
       "enabled": true,
       "credential": false,
       "mode": "regex",
-      "pattern": "(?<!\\d)(?:\\d[ \\-]?){15,19}(?!\\d)",
+      "pattern": "(?<!\\d)(?!20\\d{2}(?:0[1-9]|1[0-2])\\d{11}(?!\\d))(?!\\d{13}(?!\\d))(?:\\d[ \\-]?){15,19}(?!\\d)",
       "flags": "",
       "replace_group": 0,
       "validator": "luhn",

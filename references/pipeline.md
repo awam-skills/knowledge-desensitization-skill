@@ -13,6 +13,16 @@
 | L3 | 熵兜底 | `config/rules.json`（`mode: entropy`） | 无格式但高熵的随机串：`len≥min_len` 且 `熵≥min_entropy` 且 `字符类≥min_classes`，且不在 `exclude_regex` |
 
 **L3 默认 `credential=false`**：只替换、不入 Bitwarden（避免把版本号 / 文档措辞污染密码库）。
+
+**L2.5 `kw_hex` —— 关键词驱动的十六进制密钥**：`api_hash / API Key / SerpApi / APPID hash / hash`
+邻域（可跨 1–2 行）内的 32/64 位纯 hex 判为凭据。补 L3 漏报——L3 的 `exclude_regex`
+显式排除纯 hex（`^[0-9a-fA-F]{8,64}$`），导致 API Key 最常见的纯 hex 形态整体漏网。
+`App ID / api_id` 属**公开标识符**，刻意**保持明文**（不脱）。
+
+**资源路径护栏（`sanitize_lib.resource_spans`）**：脱敏**不改** markdown 的嵌入名 /
+链接目标 / 图片 ALT 里的**资源文件名**（`![[x.png]]`、`](…/assets/x.png)`、`![x.jpg](…)`）。
+否则「文件没改名、链接文字被改」→ 图片/附件断链。URL 目标同样保护，
+**但**含用户凭据段（形如 `账号:口令@主机`）的 URL 除外。
 确认真是密钥时用 `promote.py` 提升。
 
 ### pair（组合口令）
