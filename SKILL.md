@@ -142,7 +142,9 @@ python scripts/recover.py --data-root <km> --file <相对路径> --apply   # 单
 
 ```bash
 # 先在自己终端解锁：$env:BW_SESSION = (bw unlock --raw)
-pwsh -File scripts/bitwarden-import.ps1 -DataRoot <km>     # 产出 <km>/vault/map/bw-items.json
+pwsh -File scripts/bitwarden-import.ps1                    # 自动解析秘密材料目录（无需传参）
+pwsh -File scripts/bitwarden-import.ps1 -Id <源id>          # 或显式 -SecretDir <秘密材料目录>
+pwsh -File scripts/bitwarden-import.ps1 -DryRun            # 只预览（不解锁、不导入）
 python scripts/backfill.py --data-root <km> --apply        # [REDACTED] → 「见保险库：xxx」
 ```
 

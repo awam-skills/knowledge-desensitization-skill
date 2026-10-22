@@ -108,11 +108,21 @@ python scripts/preview.py --data-root <km>
 ## bitwarden-import.ps1 —— 凭据入库（★用户本机）
 
 ```powershell
-$env:BW_SESSION = (bw unlock --raw)          # 在你自己的 pwsh 里先解锁
-pwsh -File scripts/bitwarden-import.ps1 -DataRoot <km> [-Account <email>] [-DryRun]
+$env:BW_SESSION = (bw unlock --raw)          # 可选：先在你自己的 pwsh 里解锁（勿回显/勿记录）
+pwsh -File scripts/bitwarden-import.ps1 [-Id <源id>] [-SecretDir <秘密材料目录>] [-Account <email>] [-DryRun]
 ```
 
-参数：`-DataRoot`（必填）、`-Account`、`-BwPath`（默认 `bw`）、`-File`、`-DryRun`。
+参数：`-SecretDir`（**秘密材料目录**，含 `vault\map\`；**可省略，脚本自动解析**）、
+`-DataRoot`（**兼容别名，同义**）、`-Id`、`-SecretsRoot`、`-Account`、`-BwPath`（默认 `bw`）、
+`-File`、`-DryRun`。
+
+> **目录歧义护栏**：本脚本要的是**秘密材料目录** `<秘密材料根>/<id>`（缺省 `<技能目录>/.km/<id>`），
+> **不是真源，也不是工作副本**。运行时会打印「真源 / 工作副本 / 秘密材料目录」三者对照 + 解析依据；
+> 传错（例如传了工作副本）会被自动跳过并纠正。
+> 解析优先级：`-SecretDir` > `-DataRoot`（别名）> `$KM_SECRET_DIR` > `<秘密材料根>/<id>`（`-Id`
+> 或 `sources/*.yaml` 唯一源；秘密材料根取 `sources/<id>.yaml` → `settings.yaml` → 默认 `<技能目录>/.km`）
+> \> 扫描 `<秘密材料根>/*` 中含 `vault\map\` 的目录。
+> 另：`backfill.py --data-root` 同样指**秘密材料目录**（本项目中该参数名二义，勿按「数据根」理解）。
 
 流程：找最新 `bw-import-*.json` → `bw status` → `-DryRun` 预览 → 复用已解锁会话（否则 `bw unlock --raw`）
 → `bw sync` → `bw import` → `bw list items --search "notes/"` 写 `vault/map/bw-items.json`（>0 才写）

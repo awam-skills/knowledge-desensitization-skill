@@ -54,7 +54,7 @@ python scripts/pipeline.py --id logseq-main --apply
 
 # 2.4（可选）凭据入 Bitwarden（★你自己终端）
 #   $env:BW_SESSION = (bw unlock --raw)
-#   pwsh -File scripts/bitwarden-import.ps1 -DataRoot <秘密材料根>/<id>
+#   pwsh -File scripts/bitwarden-import.ps1                 # 目录自动解析（要的是「秘密材料目录」）
 python scripts/backfill.py --data-root <秘密材料根>/<id> --apply   # 回填「见保险库：xxx」
 
 # 2.5（可选）可逆性校验（对真源逐字节比对，期望「不一致 0」）
