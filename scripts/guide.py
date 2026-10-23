@@ -241,7 +241,7 @@ def main() -> int:
           "；示例见 config/literals.example.json。")
     print("\n下一步（一条命令跑完整流程）：")
     print(f'  python scripts/pipeline.py --id "{sid}" --apply')
-    print("  或分步：sync.py → sanitize.py → materials.py")
+    print("  或分步：sync.py → sanitize.py → materials.py → build_index.py")
     return 0
 
 

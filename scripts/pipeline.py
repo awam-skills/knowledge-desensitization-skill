@@ -2,14 +2,15 @@
 """pipeline.py — 一个源的全流程编排（技能触发时的主入口）。
 
 用户 2026-10-22 定稿流程（顺序固定）
-    1) sync.py      真源 → 工作副本（**增量**同步；源中删除的文件批量询问）
-    2) sanitize.py  工作副本**就地**脱敏（输入=输出；稳定 token、幂等、可逆）
-    3) materials.py 还原材料落盘到「单独备份目录」（技能执行；建议离线）
-    4) 输出**备份建议**（工作副本 → 网盘/私有 Git；材料 → 私密离线；技能不代上传）
+    1) sync.py        真源 → 工作副本（**增量**同步；源中删除的文件批量询问）
+    2) sanitize.py    工作副本**就地**脱敏（输入=输出；稳定 token、幂等、可逆）
+    3) materials.py   还原材料落盘到「单独备份目录」（技能执行；建议离线）
+    4) build_index.py 旁路 Index（缺省传 --dry-run；--apply 时真正写 Index；默认不改写 .md）
+    5) 输出**备份建议**（工作副本 → 网盘/私有 Git；材料 → 私密离线；技能不代上传）
 
 用法
     python scripts/pipeline.py --id <源id> [--apply] \
-        [--deleted keep|remove] [--skip-sync] [--skip-sanitize] [--skip-materials]
+        [--deleted keep|remove] [--skip-sync] [--skip-sanitize] [--skip-materials] [--skip-index]
 
 缺省 dry-run（每一步都只打印计划）；--apply 才真正执行。
 
@@ -54,6 +55,7 @@ def main() -> int:
     ap.add_argument("--skip-sync", action="store_true")
     ap.add_argument("--skip-sanitize", action="store_true")
     ap.add_argument("--skip-materials", action="store_true")
+    ap.add_argument("--skip-index", action="store_true")
     args = ap.parse_args()
 
     cfg = km_config.resolve_source(args.id)
@@ -99,6 +101,13 @@ def main() -> int:
     # 3) 还原材料落盘
     if not args.skip_materials:
         rc |= run("materials.py", ["--id", args.id, "--data-root", data_root] + common)
+
+    # 4) 旁路 Index（build_index 用 --dry-run 表示不写；无 --apply 旗标）
+    if not args.skip_index:
+        a = ["--id", args.id, "--data-root", data_root]
+        if not args.apply:
+            a += ["--dry-run"]
+        rc |= run("build_index.py", a)
 
     print("\n" + "=" * 66)
     if not args.apply:

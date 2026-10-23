@@ -49,10 +49,10 @@ python scripts/guide.py --source <真源目录> --data-root <数据根> \
 ```bash
 python scripts/pipeline.py --id <源id> [--apply] [--data-root <根>] \
     [--deleted keep|remove] [--with-assets] \
-    [--skip-sync] [--skip-sanitize] [--skip-materials]
+    [--skip-sync] [--skip-sanitize] [--skip-materials] [--skip-index]
 ```
 
-顺序固定：`sync → sanitize(就地) → materials → 备份建议`。缺省 dry-run。
+顺序固定：`sync → sanitize(就地) → materials → build_index → 备份建议`。缺省 dry-run（build_index 亦传 `--dry-run`；`--apply` 时真正写 Index）。
 
 ## sync.py —— 真源 → 工作副本（增量）
 

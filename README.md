@@ -14,7 +14,7 @@
   值只注入子进程环境变量，**永不进模型上下文**（有 token 才有身份，未注册 = 只能读元数据）
 
 机制细节见 `SKILL.md` 与 `references/`。
-- **→ RAG / awam 交接**：[`references/handoff-to-rag.md`](references/handoff-to-rag.md)（唯一可索引 = `<data_root>/<id>`；禁止默认真源）
+- **→ RAG / awam 交接**：[`references/handoff-to-rag.md`](references/handoff-to-rag.md)（唯一可索引 = `<data_root>/<id>`；pipeline 第 4 步自动跑 `build_index`（可用 `--skip-index` 跳过）；也可单独重跑；再交给 awam；默认 BM25+标题×4）
 
 ---
 
@@ -47,10 +47,15 @@ python scripts/guide.py \
 
 # 2.2 一条命令跑完整流程（缺省 dry-run；加 --apply 执行）
 python scripts/pipeline.py --id logseq-main --apply
-#   1) sync.py      真源 → 工作副本（增量；源中删除的文件批量询问）
-#   2) sanitize.py  工作副本就地脱敏（幂等、可逆）
-#   3) materials.py 还原材料落盘到「单独备份目录」
+#   1) sync.py        真源 → 工作副本（增量；源中删除的文件批量询问）
+#   2) sanitize.py    工作副本就地脱敏（幂等、可逆）
+#   3) materials.py   还原材料落盘到「单独备份目录」
+#   4) build_index.py 旁路 Index（自动；可用 --skip-index 跳过；默认不改写 .md）
 #   → 末尾打印备份建议（工作副本→网盘/私有 Git；材料→私密离线）
+
+# 2.2b 单独重跑 Index（pipeline 已自动跑；仅需补索引时用）
+python scripts/build_index.py --id logseq-main
+#   产出：<工作副本>/index.json、journal-date-map.json、block-refs.json、index-report.md
 
 # 2.3（可选）明文口令清单：本机复制并填写（绝不外传）
 #   cp <秘密材料根>/<id>/config/literals.example.json .../config/literals.json

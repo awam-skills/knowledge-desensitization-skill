@@ -104,21 +104,24 @@ python scripts/guide.py --source <真源目录> --data-root <数据根> \
 ```bash
 # 全流程一条命令（缺省 dry-run；--apply 才执行）
 python scripts/pipeline.py --id <源id> --apply
+# 可用 --skip-index 跳过 Index；单独重跑：python scripts/build_index.py --id <源id>
 
-# 它按顺序做三件事：
-#   1) sync.py      真源 → 工作副本（**增量**：只拷新增/改动；源中删除的文件批量询问）
-#   2) sanitize.py  工作副本**就地**脱敏（稳定 token、幂等、可逆；vault/config 落在 .km/）
-#   3) materials.py 还原材料落盘到「单独备份目录」（技能执行；建议离线）
+# 它按顺序做四件事，再给备份建议：
+#   1) sync.py        真源 → 工作副本（**增量**：只拷新增/改动；源中删除的文件批量询问）
+#   2) sanitize.py    工作副本**就地**脱敏（稳定 token、幂等、可逆；vault/config 落在 .km/）
+#   3) materials.py   还原材料落盘到「单独备份目录」（技能执行；建议离线）
+#   4) build_index.py 旁路 Index（自动；缺省 dry-run 传 --dry-run；--apply 时真正写；默认不改写 .md）
 # 最后打印**备份建议**（工作副本 → 网盘/私有 Git；材料 → 私密离线）
 ```
 
 分步等价（`<km>` = `<秘密材料根>/<id>`，`<work>` = `<data_root>/<id>`）：
 
 ```bash
-python scripts/sync.py      --id <源id> [--apply] [--deleted keep|remove]
-python scripts/sanitize.py  --data-root <km> --root <work> --out <work> --in-place --apply
-                            [--note-dirs journals,pages] [--all-text]
-python scripts/materials.py --id <源id> --apply --verify
+python scripts/sync.py        --id <源id> [--apply] [--deleted keep|remove]
+python scripts/sanitize.py    --data-root <km> --root <work> --out <work> --in-place --apply
+                              [--note-dirs journals,pages] [--all-text]
+python scripts/materials.py   --id <源id> --apply --verify
+python scripts/build_index.py --id <源id>          # pipeline 已自动跑；仅单独重跑时用
 ```
 
 - **同步增量**：`sync.py` 用 `size+mtime` 快判、必要时回退 `sha256`；源中**删除**的文件
@@ -152,7 +155,7 @@ python scripts/backfill.py --data-root <km> --apply        # [REDACTED] → 「�
 
 - **脱敏增量**：当前脱敏是「全量就地、幂等兜底」，暂时不做增量（原因与方向见
   `references/improvements.md`）。
-> **→ RAG / awam 交接**：见 [`references/handoff-to-rag.md`](references/handoff-to-rag.md)。索引唯一输入为脱敏工作副本；禁止默认真源。
+> **→ RAG / awam 交接**：见 [`references/handoff-to-rag.md`](references/handoff-to-rag.md)。数据流：真源→sanitize→**build_index**→awam（默认 BM25+标题×4）。Index 已是 pipeline 第 4 步（自动）；可用 `--skip-index` 跳过；单独重跑仍可用 `python scripts/build_index.py --id <源id>`。
 
 ## 误报治理
 

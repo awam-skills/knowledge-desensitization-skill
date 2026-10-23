@@ -80,6 +80,7 @@ def main() -> int:
     ap.add_argument("--skip-sync", action="store_true")
     ap.add_argument("--skip-sanitize", action="store_true")
     ap.add_argument("--skip-materials", action="store_true")
+    ap.add_argument("--skip-index", action="store_true")
     args = ap.parse_args()
 
     if args.list:
@@ -113,7 +114,7 @@ def main() -> int:
             argv += ["--deleted", args.deleted]
         if args.with_assets:
             argv += ["--with-assets"]
-        for flag in ("skip-sync", "skip-sanitize", "skip-materials"):
+        for flag in ("skip-sync", "skip-sanitize", "skip-materials", "skip-index"):
             if getattr(args, flag.replace("-", "_")):
                 argv += [f"--{flag}"]
         return _run("pipeline.py", argv)
