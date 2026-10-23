@@ -14,6 +14,7 @@
   值只注入子进程环境变量，**永不进模型上下文**（有 token 才有身份，未注册 = 只能读元数据）
 
 机制细节见 `SKILL.md` 与 `references/`。
+- **→ RAG / awam 交接**：[`references/handoff-to-rag.md`](references/handoff-to-rag.md)（唯一可索引 = `<data_root>/<id>`；禁止默认真源）
 
 ---
 

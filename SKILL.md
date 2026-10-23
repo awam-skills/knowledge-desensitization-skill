@@ -152,6 +152,7 @@ python scripts/backfill.py --data-root <km> --apply        # [REDACTED] → 「�
 
 - **脱敏增量**：当前脱敏是「全量就地、幂等兜底」，暂时不做增量（原因与方向见
   `references/improvements.md`）。
+> **→ RAG / awam 交接**：见 [`references/handoff-to-rag.md`](references/handoff-to-rag.md)。索引唯一输入为脱敏工作副本；禁止默认真源。
 
 ## 误报治理
 
