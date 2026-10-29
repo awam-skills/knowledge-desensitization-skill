@@ -42,8 +42,7 @@ def print_sources() -> None:
         print("  · 源目录（要处理的知识库，只读）")
         print("  · 数据根（存放工作副本与秘密材料；无默认值）")
         print("\n示例：")
-        print('  python scripts/entry.py --source "G:\\Data\\knowledge\\logseq\\main" '
-              '--data-root "G:\\Knowledge\\data"')
+        print('  python scripts/entry.py --source "<真源目录>" --data-root "<数据根>"')
         return
     print(f"已保存 {len(srcs)} 个源，要处理哪一个？（用 --id <源id> 指定）\n")
     print(f"{'id':<20} {'数据集名':<12} {'真源':<44} 上次同步")

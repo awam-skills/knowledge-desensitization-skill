@@ -22,7 +22,7 @@
     version: 1
     id: logseq-main
     name: logseq                 # 数据集名（工作副本工作目录名；缺省 = id）
-    source: G:\\Data\\knowledge\\logseq\\main    # 真源（只读）
+    source: <真源目录>                 # 真源（只读）
     work_dir: <可选，覆盖工作副本位置；缺省 <data_root>/<id>>
     sync:     { on_deleted: ask, exclude: [...] }      # 可选，覆盖全局
     sanitize: { include_assets: false, note_dirs: [...] }
@@ -255,8 +255,8 @@ def _slug(s: str) -> str:
 def suggest_subdir(source: str) -> str:
     """按输入源路径推荐数据根下的子目录名：取末两级路径拼接。
 
-    例：G:\\Data\\knowledge\\logseq\\main  →  logseq-main
-         G:\\Knowledge\\logseq             →  Knowledge-logseq
+    例：…\\logseq\\main        →  logseq-main
+        …\\Knowledge\\logseq   →  Knowledge-logseq
     """
     p = os.path.abspath(source).rstrip("\\/")
     parts = [x for x in re.split(r"[\\/]+", p) if x]

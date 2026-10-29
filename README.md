@@ -41,9 +41,9 @@
 # 2.1 引导一个源（写 <KM_CONFIG_HOME>/sources/<id>.yaml 与 settings.yaml）
 #     <KM_CONFIG_HOME> = %USERPROFILE%\.knowledge-manager-skills（可用 env 覆盖）
 python scripts/guide.py \
-    --source G:/Data/knowledge/logseq/main \
-    --data-root G:/Knowledge/data \
-    --private-backup-dir G:/Knowledge/private     # 先加 --dry-run 看将建的结构与配置
+    --source <真源目录> \
+    --data-root <数据根> \
+    --private-backup-dir <私密备份目录>     # 先加 --dry-run 看将建的结构与配置
 
 # 2.2 一条命令跑完整流程（缺省 dry-run；加 --apply 执行）
 python scripts/pipeline.py --id logseq-main --apply
@@ -66,7 +66,7 @@ python scripts/build_index.py --id logseq-main
 python scripts/backfill.py --data-root <秘密材料根>/<id> --apply   # 回填「见保险库：<条目名> [vault:...]」
 
 # 2.5（可选）可逆性校验（对真源逐字节比对，期望「不一致 0」）
-python scripts/recover.py --data-root <秘密材料根>/<id> --verify --source G:/Data/knowledge/logseq/main
+python scripts/recover.py --data-root <秘密材料根>/<id> --verify --source <真源目录>
 ```
 
 每一步都只打印**计数与路径**，不打印任何凭据值。

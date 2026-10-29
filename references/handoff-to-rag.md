@@ -14,16 +14,16 @@
   → awam-knowledge（默认 BM25 + 标题×4；hybrid 非默认）
 ```
 
-## 2. 路径示例（以本机 settings 为准）
+## 2. 路径约定（以本机 `settings.yaml` + `sources/<id>.yaml` 为准）
 
 | 角色 | 路径 |
 |---|---|
-| 真源（只读，未脱敏） | `G:\Data\knowledge\logseq\main` |
-| 工作副本（可索引） | `G:\Knowledge\data\logseq-main` |
+| 真源（只读，未脱敏） | `<真源目录>`（源配置 `source`） |
+| 工作副本（可索引） | `<data_root>/<id>` |
 | Index 落点 | 工作副本根下 `index.json` 等（旁路 JSON，默认不改写 .md） |
-| 数据根 | `G:\Knowledge\data`（`settings.yaml` → `data_root`） |
+| 数据根 | `<data_root>`（`settings.yaml` → `data_root`） |
 | 机密旁路 `.km` | 脱敏仓旁 / `<secrets_root>/<id>/`（vault、map、salt、literals） |
-| 私密备份 materials | `I:\Backup\knowledge\...`（`private_backup_dir`） |
+| 私密备份 materials | `<private_backup_dir>/<id>`（`private_backup_dir`） |
 
 ## 3. 永不进索引
 
@@ -32,7 +32,7 @@
 - `literals.json`、映射与恢复材料
 - 私密备份目录下的 materials
 - Bitwarden 导出
-- **真源**（未脱敏的 `G:\Data\knowledge\...`）
+- **真源**（未脱敏的 `<真源目录>`）
 
 ## 4. 交接检查清单
 
@@ -49,14 +49,15 @@
 ## 5. 本地两条命令（示例）
 
 ```bash
-# 1) Index：pipeline 第 4 步已自动生成；仅需单独重跑时：
-python G:/Knowledge/knowledge-desensitization/scripts/build_index.py --id logseq-main
+# 1) Index：pipeline 第 4 步已自动生成；仅需单独重跑时（在本仓根目录执行）：
+python scripts/build_index.py --id logseq-main
 
 # 2) awam 冒烟（默认 BM25 + 标题×4；自动读 index.json 标题）
-node G:/Projects/19AI/skills/awam-knowledge/code/smoke-index.js --root G:/Knowledge/data/logseq-main --queries "知识库|Logseq"
+#    <awam-knowledge 技能目录> = 该技能在本机的安装位置
+node <awam-knowledge 技能目录>/code/smoke-index.js --root <data_root>/logseq-main --queries "知识库|Logseq"
 ```
 
 ## 6. 指向
 
 - 脱敏：本仓 `SKILL.md`、`scripts/pipeline.py`、`scripts/build_index.py`、`references/`
-- awam：`G:\Projects\19AI\skills\awam-knowledge\README.md`；默认 ROOT 见 `code/index-root.js`；召回默认见 `code/eval-recall.js` / `smoke-index.js`
+- awam：`<awam-knowledge 技能目录>/README.md`；默认 ROOT 见 `code/index-root.js`；召回默认见 `code/eval-recall.js` / `smoke-index.js`

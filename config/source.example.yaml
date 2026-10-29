@@ -13,8 +13,8 @@ id: logseq-main
 # 数据集名（工作副本工作目录名；缺省 = id）
 name: logseq
 
-# 真源目录（只读；绝不破坏、不上传）
-source: G:\Data\knowledge\logseq\main
+# 真源目录（只读；绝不破坏、不上传）。本机实际值写在 <KM_CONFIG_HOME>/sources/<id>.yaml
+source: <真源目录>
 
 # 工作副本目录（就地脱敏对象）。留空则默认 <data_root>/<id>。
 work_dir: null
@@ -37,7 +37,7 @@ sanitize:
 
 backup:
   # 本源的「单独备份目录」（覆盖全局 private_backup_dir）；建议离线
-  # private_backup_dir: G:\Knowledge\private\logseq
+  # private_backup_dir: <私密备份目录>/<id>
 
 # 运行态（由脚本维护：last_sync / last_sanitize / last_materials …）；用户不必手改。
 state: {}

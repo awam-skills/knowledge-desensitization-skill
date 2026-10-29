@@ -11,7 +11,7 @@
 
 用法
     python scripts/build_index.py --id logseq-main
-    python scripts/build_index.py --root G:/Knowledge/data/logseq-main
+    python scripts/build_index.py --root <data_root>/logseq-main
     python scripts/build_index.py --id logseq-main --dry-run
     python scripts/build_index.py --id logseq-main --out-dir <子目录>   # 仍须在工作副本下
 
