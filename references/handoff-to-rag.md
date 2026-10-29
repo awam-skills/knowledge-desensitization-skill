@@ -6,7 +6,7 @@
 
 ```
 真源（只读）
-  → 可选整理（logseq-迁移工具 / wiz 清理）
+  → 可选整理（wiz 清理）
   → 脱敏 pipeline（本仓 scripts/pipeline.py：sync → sanitize → materials → build_index）
   → <data_root>/<id>                 ← 唯一可索引工作副本（含旁路 Index）
   → build_index（pipeline 第 4 步自动；也可用 scripts/build_index.py 单独重跑；--skip-index 可跳过）
@@ -33,7 +33,6 @@
 - 私密备份目录下的 materials
 - Bitwarden 导出
 - **真源**（未脱敏的 `G:\Data\knowledge\...`）
-- **禁止**把 Index 写到 `G:\Knowledge\logseq`（那是 logseq2kb 旧设计目标，未与脱敏衔接）
 
 ## 4. 交接检查清单
 

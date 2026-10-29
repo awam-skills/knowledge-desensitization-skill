@@ -2,13 +2,12 @@
 # -*- coding: utf-8 -*-
 """build_index.py — 为脱敏工作副本生成旁路 Index（不改写 .md 正文）。
 
-相对 logseq-迁移工具/logseq2kb.py 的差异（重要）
-- logseq2kb：会改写正文（加 YAML frontmatter、URL 编码资源链接），并默认输出到
-  G:\\Knowledge\\logseq（本脚本**禁止**写到那里）。
-- 本脚本：默认只写旁路 JSON（index.json / journal-date-map.json / block-refs.json /
-  可选 index-report.md）到工作副本根；**不改写任何 .md**，以免破坏脱敏幂等。
-- --write-frontmatter 可开关、默认关；开启时才往 md 头部插入 frontmatter（仍可逆地
-  建议只在临时副本上用）。
+设计
+- 只写旁路 JSON（index.json / journal-date-map.json / block-refs.json / 可选
+  index-report.md）到工作副本根；**不改写任何 .md**，以免破坏脱敏幂等。
+- Index 落点始终在工作副本根（或 `--out-dir` 指定的其下子目录）。
+- --write-frontmatter 可开关、默认关；开启时才往 md 头部插入 frontmatter（会改写
+  正文，建议只在临时副本上用）。
 
 用法
     python scripts/build_index.py --id logseq-main
@@ -342,10 +341,10 @@ def write_outputs(out_dir: Path, result: dict, dry_run: bool, with_report: bool)
             f"- 解码失败跳过: {result['skipped_decode']}",
             f"- frontmatter 写入: {result['frontmatter_written']}（默认应为 0）",
             "",
-            "## 与 logseq2kb 的差异",
+            "## 约定",
             "",
             "- 本脚本默认**只写旁路 JSON**，不改写正文，不破坏脱敏幂等。",
-            "- **不要**把 Index 写到 `G:\\Knowledge\\logseq`；落点在脱敏工作副本根（或 `--out-dir` 子目录）。",
+            "- Index 落点在脱敏工作副本根（或 `--out-dir` 子目录）。",
             "- awam 默认召回 BM25 + 标题×4；hybrid 非默认。",
             "",
             "## 下一步",
@@ -388,12 +387,6 @@ def main() -> int:
         return 2
 
     out_dir = Path(os.path.abspath(args.out_dir)) if args.out_dir else root
-    # 安全：禁止写到 G:/Knowledge/logseq（迁移工具旧目标）
-    forbidden = os.path.normcase(os.path.abspath(r"G:\Knowledge\logseq"))
-    if os.path.normcase(str(out_dir)).rstrip("\\/") == forbidden:
-        print("拒绝：Index 不得写到 G:\\Knowledge\\logseq；请写到脱敏工作副本根。",
-              file=sys.stderr)
-        return 2
 
     result = build(root, write_frontmatter=args.write_frontmatter, dry_run=args.dry_run)
     written = write_outputs(
