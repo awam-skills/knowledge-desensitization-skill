@@ -7,6 +7,7 @@
     3) materials.py   还原材料落盘到「单独备份目录」（技能执行；建议离线）
     4) build_index.py 旁路 Index（缺省传 --dry-run；--apply 时真正写 Index；默认不改写 .md）
     5) 输出**备份建议**（工作副本 → 网盘/私有 Git；材料 → 私密离线；技能不代上传）
+    6) 汇总：任一步非零退出 → 逐条点名失败步骤与各步落盘情况，不谎报「全流程完成」
 
 用法
     python scripts/pipeline.py --id <源id> [--apply] \
@@ -77,14 +78,22 @@ def main() -> int:
     print("=" * 66)
 
     rc = 0
+    failed: list[tuple[str, int]] = []
     common = (["--apply"] if args.apply else [])
+
+    def step(label: str, script: str, script_args: list[str]) -> None:
+        nonlocal rc
+        code = run(script, script_args)
+        if code:
+            failed.append((label, code))
+        rc |= code
 
     # 1) 同步（增量）
     if not args.skip_sync:
         a = ["--id", args.id, "--data-root", data_root] + common
         if args.deleted:
             a += ["--deleted", args.deleted]
-        rc |= run("sync.py", a)
+        step("1 同步 sync", "sync.py", a)
 
     # 2) 就地脱敏
     if not args.skip_sanitize:
@@ -96,22 +105,28 @@ def main() -> int:
             a += ["--all-text"]
         if args.with_assets or cfg["sanitize"].get("include_assets"):
             a += ["--with-assets"]
-        rc |= run("sanitize.py", a)
+        step("2 脱敏 sanitize", "sanitize.py", a)
 
     # 3) 还原材料落盘
     if not args.skip_materials:
-        rc |= run("materials.py", ["--id", args.id, "--data-root", data_root] + common)
+        step("3 材料落盘 materials", "materials.py",
+             ["--id", args.id, "--data-root", data_root] + common)
 
     # 4) 旁路 Index（build_index 用 --dry-run 表示不写；无 --apply 旗标）
     if not args.skip_index:
         a = ["--id", args.id, "--data-root", data_root]
         if not args.apply:
             a += ["--dry-run"]
-        rc |= run("build_index.py", a)
+        step("4 索引 build_index", "build_index.py", a)
 
     print("\n" + "=" * 66)
     if not args.apply:
         print("[dry-run] 以上均为计划。加 --apply 真正执行。")
+    elif failed:
+        print(f"未完成：{len(failed)} 步失败，其余步骤已落盘。"
+              "请按各步自身输出单独补救后重跑对应步骤。")
+        for label, code in failed:
+            print(f"  ✗ {label}  (rc={code})")
     else:
         print("全流程完成。请按上面的「备份建议」处置工作副本与还原材料。")
     print("=" * 66)
